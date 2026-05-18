@@ -1,6 +1,10 @@
 from server.core.logger import logger
 from server.services.migration.domain_models import MappingRule, MappingDetail
-from server.core.db_migration import get_connection
+from server.core.db_migration import (
+    get_connection,
+    get_mapping_rule_detail_table,
+    get_mapping_rule_table,
+)
 
 def ensure_str(val):
     """LOB 객체인 경우 문자열로 읽어 반환합니다."""
@@ -12,8 +16,10 @@ def get_pending_jobs() -> list[MappingRule]:
     """USE_YN='Y' 이고 TASK_TARGET IS NOT NULL인 작업을 PRIORITY 순으로 가져옵니다."""
     logger.debug("[Repository] DB에서 작업 대상을 스캔합니다...")
     jobs = {}
+    map_table = get_mapping_rule_table()
+    detail_table = get_mapping_rule_detail_table()
 
-    query = """
+    query = f"""
         SELECT
             R.MAP_ID, R.MAP_TYPE, R.FR_TABLE, R.TO_TABLE,
             R.USE_YN, R.TARGET_YN, R.PRIORITY,
@@ -21,8 +27,8 @@ def get_pending_jobs() -> list[MappingRule]:
             R.BATCH_CNT, R.ELAPSED_SECONDS, R.RETRY_COUNT,
             R.CREATED_AT, R.UPD_TS,
             D.MAP_DTL, D.FR_COL, D.TO_COL
-        FROM NEXT_MIG_INFO R
-        LEFT JOIN NEXT_MIG_INFO_DTL D ON R.MAP_ID = D.MAP_ID
+        FROM {map_table} R
+        LEFT JOIN {detail_table} D ON R.MAP_ID = D.MAP_ID
         WHERE R.USE_YN = 'Y'
           AND R.TARGET_YN IS NOT NULL
         ORDER BY R.PRIORITY ASC, D.FR_COL ASC
@@ -75,7 +81,8 @@ def get_pending_jobs() -> list[MappingRule]:
 
 def increment_batch_count(map_id: int):
     logger.debug(f"[Repository] map_id={map_id} | BATCH_CNT +1")
-    query = "UPDATE NEXT_MIG_INFO SET BATCH_CNT = COALESCE(BATCH_CNT, 0) + 1, UPD_TS = CURRENT_TIMESTAMP WHERE MAP_ID = :1"
+    map_table = get_mapping_rule_table()
+    query = f"UPDATE {map_table} SET BATCH_CNT = COALESCE(BATCH_CNT, 0) + 1, UPD_TS = CURRENT_TIMESTAMP WHERE MAP_ID = :1"
     try:
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -87,8 +94,9 @@ def increment_batch_count(map_id: int):
 def update_job_status(map_id: int, status: str, elapsed_seconds: int = 0, retry_count: int = 0) -> bool:
     logger.info(f"[Repository] map_id={map_id} | DB 상태를 {status} 로 업데이트 (Retry: {retry_count})")
 
-    query = """
-        UPDATE NEXT_MIG_INFO
+    map_table = get_mapping_rule_table()
+    query = f"""
+        UPDATE {map_table}
         SET STATUS = :1,
             USE_YN = 'N',
             UPD_TS = CURRENT_TIMESTAMP,
@@ -117,8 +125,9 @@ def update_job_status(map_id: int, status: str, elapsed_seconds: int = 0, retry_
 def check_dependencies(map_id: int, to_table: str, priority: int) -> str:
     logger.debug(f"[Repository] map_id={map_id} | TO_TABLE={to_table} 의존성 체크 시작")
 
-    query = """
-        SELECT STATUS FROM NEXT_MIG_INFO
+    map_table = get_mapping_rule_table()
+    query = f"""
+        SELECT STATUS FROM {map_table}
         WHERE DBMS_LOB.SUBSTR(TO_TABLE, 200, 1) = :1
           AND PRIORITY < :2
           AND MAP_ID != :3
@@ -146,8 +155,9 @@ def check_dependencies(map_id: int, to_table: str, priority: int) -> str:
         return "ERROR"
 
 def is_first_job_for_target(map_id: int, to_table: str, priority: int) -> bool:
-    query = """
-        SELECT COUNT(*) FROM NEXT_MIG_INFO
+    map_table = get_mapping_rule_table()
+    query = f"""
+        SELECT COUNT(*) FROM {map_table}
         WHERE DBMS_LOB.SUBSTR(TO_TABLE, 200, 1) = :1
           AND PRIORITY < :2
           AND MAP_ID != :3

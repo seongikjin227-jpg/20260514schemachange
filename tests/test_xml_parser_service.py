@@ -2,7 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services.sql.xml_parser_service import parse_single_mapper_xml
+from server.services.sql.xml_parser_service import (
+    _extract_target_tables_from_sql,
+    parse_single_mapper_xml,
+)
 
 
 class XmlParserServiceTest(unittest.TestCase):
@@ -74,6 +77,58 @@ class XmlParserServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(sql_text.count("ORDER BY A"), 1)
+
+    def test_extract_target_tables_in_join_inline_view(self):
+        sql_text = """
+            SELECT A.ID, B.CNT
+            FROM TB_MAIN A
+            JOIN (
+                SELECT REF_ID, COUNT(*) CNT
+                FROM TB_DETAIL
+                WHERE STATUS = 'Y'
+                GROUP BY REF_ID
+            ) B ON A.ID = B.REF_ID
+        """
+
+        self.assertEqual(
+            _extract_target_tables_from_sql(sql_text),
+            ["TB_MAIN", "TB_DETAIL"],
+        )
+
+    def test_extract_target_tables_in_nested_subquery(self):
+        sql_text = """
+            SELECT *
+            FROM TB_OUTER O
+            WHERE EXISTS (
+                SELECT 1
+                FROM (
+                    SELECT ID
+                    FROM TB_INNER
+                ) X
+                WHERE X.ID = O.ID
+            )
+        """
+
+        self.assertEqual(
+            _extract_target_tables_from_sql(sql_text),
+            ["TB_OUTER", "TB_INNER"],
+        )
+
+    def test_extract_target_tables_ignores_cte_name_but_keeps_cte_source(self):
+        sql_text = """
+            WITH V_DATA AS (
+                SELECT ID
+                FROM TB_SOURCE
+            )
+            SELECT *
+            FROM V_DATA V
+            JOIN TB_LOOKUP L ON L.ID = V.ID
+        """
+
+        self.assertEqual(
+            _extract_target_tables_from_sql(sql_text),
+            ["TB_LOOKUP", "TB_SOURCE"],
+        )
 
 
 if __name__ == "__main__":

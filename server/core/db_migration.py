@@ -1,9 +1,12 @@
 import oracledb
 import os
+import re
+from pathlib import Path
 from server.core.logger import logger
 from dotenv import load_dotenv
 
-load_dotenv()
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
 oracledb.defaults.fetch_lobs = False
 
@@ -14,6 +17,60 @@ DB_PORT = os.getenv("DB_PORT") or "1521"
 DB_SID = os.getenv("DB_SID") or "xe"
 
 ORACLE_CLIENT_PATH = os.getenv("ORACLE_CLIENT_PATH")
+
+
+def _safe_schema_identifier(schema: str, env_name: str) -> str:
+    clean = (schema or "").strip().upper()
+    if not clean:
+        return ""
+    if not re.fullmatch(r"[A-Z][A-Z0-9_$#]*", clean):
+        raise ValueError(f"Invalid {env_name} value: {schema}")
+    return clean
+
+
+def _schema_env(env_name: str) -> str:
+    return _safe_schema_identifier(os.getenv(env_name) or "", env_name)
+
+
+def qualify_system_table(table_name: str) -> str:
+    schema = _schema_env("ORACLE_SCHEMA")
+    clean_table = (table_name or "").strip()
+    if not schema or not clean_table or "." in clean_table:
+        return clean_table
+    return f"{schema}.{clean_table}"
+
+
+def qualify_fr_table(table_name: str) -> str:
+    schema = _schema_env("ORACLE_SCHEMA_SRC")
+    clean_table = (table_name or "").strip()
+    if not schema or not clean_table or "." in clean_table:
+        return clean_table
+    return f"{schema}.{clean_table}"
+
+
+def qualify_to_table(table_name: str) -> str:
+    schema = _schema_env("ORACLE_SCHEMA_TGT")
+    clean_table = (table_name or "").strip()
+    if not schema or not clean_table or "." in clean_table:
+        return clean_table
+    return f"{schema}.{clean_table}"
+
+
+def get_mapping_rule_table() -> str:
+    return qualify_system_table("NEXT_MIG_INFO")
+
+
+def get_mapping_rule_detail_table() -> str:
+    return qualify_system_table("NEXT_MIG_INFO_DTL")
+
+
+def get_migration_log_table() -> str:
+    return qualify_system_table("NEXT_MIG_LOG")
+
+
+def get_migration_log_sequence() -> str:
+    return qualify_system_table("MIGRATION_LOG_SEQ")
+
 
 def fetch_table_ddl(table_name: str) -> list:
     """소스 테이블의 컬럼 메타데이터를 읽기 전용으로 조회합니다."""

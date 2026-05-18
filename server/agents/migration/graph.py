@@ -13,7 +13,7 @@ from server.agents.migration.executor import execute_migration, truncate_table
 from server.agents.migration.verifier import execute_verification
 from server.repositories.migration.repository import update_job_status, check_dependencies, is_first_job_for_target
 from server.repositories.migration.history_repository import log_generated_sql, log_business_history
-from server.core.db_migration import fetch_table_ddl
+from server.core.db_migration import fetch_table_ddl, qualify_fr_table, qualify_to_table
 from server.agents.migration.state import MigrationState
 
 LLM_MAX_RETRY = 2
@@ -38,16 +38,18 @@ def fetch_ddl_node(state: MigrationState) -> dict:
     job = state["next_sql_info"]
     source_ddl = {}
     for tbl_name in _extract_table_names(job.fr_table):
-        rows = fetch_table_ddl(tbl_name)
+        source_table = qualify_fr_table(tbl_name)
+        rows = fetch_table_ddl(source_table)
         if rows:
-            source_ddl[tbl_name] = rows
-            logger.info(f"[Graph:DDL] 소스 {tbl_name} 컬럼 {len(rows)}개 조회 완료")
+            source_ddl[source_table] = rows
+            logger.info(f"[Graph:DDL] 소스 {source_table} 컬럼 {len(rows)}개 조회 완료")
 
-    target_ddl = fetch_table_ddl(job.to_table)
+    target_table = qualify_to_table(job.to_table)
+    target_ddl = fetch_table_ddl(target_table)
     if target_ddl:
-        logger.info(f"[Graph:DDL] 타겟 {job.to_table} 컬럼 {len(target_ddl)}개 조회 완료")
+        logger.info(f"[Graph:DDL] 타겟 {target_table} 컬럼 {len(target_ddl)}개 조회 완료")
     else:
-        logger.warning(f"[Graph:DDL] 타겟 {job.to_table!r} DDL 조회 결과 없음")
+        logger.warning(f"[Graph:DDL] 타겟 {target_table!r} DDL 조회 결과 없음")
 
     return {"source_ddl": source_ddl if source_ddl else None, "target_ddl": target_ddl if target_ddl else None}
 

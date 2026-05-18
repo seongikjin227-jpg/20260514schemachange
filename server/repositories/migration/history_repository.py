@@ -1,5 +1,5 @@
 from server.core.logger import logger
-from server.core.db_migration import get_connection
+from server.core.db_migration import get_connection, get_mapping_rule_table, get_migration_log_sequence, get_migration_log_table
 
 def log_generated_sql(map_id: int, migration_sql: str, verification_sql: str):
     def ensure_string(val):
@@ -12,8 +12,9 @@ def log_generated_sql(map_id: int, migration_sql: str, verification_sql: str):
 
     logger.info(f"[HistoryRepo] map_id={map_id} | 마이그레이션 SQL(DML/VERIFY) DB 기록 진행")
 
-    query = """
-        UPDATE NEXT_MIG_INFO
+    map_table = get_mapping_rule_table()
+    query = f"""
+        UPDATE {map_table}
         SET MIG_SQL = :1, VERIFY_SQL = :2, UPD_TS = CURRENT_TIMESTAMP
         WHERE MAP_ID = :3
     """
@@ -33,10 +34,12 @@ def log_business_history(map_id: int, log_type: str, log_level: str, step_name: 
 
     logger.info(f"[HistoryRepo] map_id={map_id} | Business Log 저장 -> [{step_name}][{status}] : {msg_str[:50]}")
 
-    query = """
-        INSERT INTO NEXT_MIG_LOG (
+    log_table = get_migration_log_table()
+    log_sequence = get_migration_log_sequence()
+    query = f"""
+        INSERT INTO {log_table} (
             LOG_ID, MAP_ID, MIG_KIND, LOG_TYPE, LOG_LEVEL, STEP_NAME, STATUS, MESSAGE, RETRY_COUNT
-        ) VALUES (MIGRATION_LOG_SEQ.NEXTVAL, :1, :2, :3, :4, :5, :6, :7, :8)
+        ) VALUES ({log_sequence}.NEXTVAL, :1, :2, :3, :4, :5, :6, :7, :8)
     """
 
     try:

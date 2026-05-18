@@ -856,8 +856,30 @@ def _starts_from_clause_stop(text: str, idx: int) -> bool:
     )
 
 
-def _extract_from_clause_tables(sql_text: str) -> list[str]:
+def _extract_parenthesized_sql_segments(text: str) -> list[str]:
+    """괄호 안에 있는 SELECT/FROM SQL 조각을 재귀 파싱 후보로 추출한다."""
+    segments: list[str] = []
+    idx = 0
+    while idx < len(text):
+        if text[idx] != "(":
+            idx += 1
+            continue
+        end = _skip_balanced_parentheses(text, idx)
+        if end <= idx + 1:
+            idx += 1
+            continue
+        inner = text[idx + 1 : end - 1].strip()
+        if re.search(r"\b(SELECT|FROM|WITH)\b", inner, flags=re.IGNORECASE):
+            segments.append(inner)
+        idx = end
+    return segments
+
+
+def _extract_from_clause_tables(sql_text: str, depth: int = 0) -> list[str]:
     """FROM 절의 comma join 패턴을 포함해 테이블명을 추출한다."""
+    if depth > 20:
+        return []
+
     tables: list[str] = []
     idx = 0
     upper = sql_text.upper()
@@ -895,7 +917,11 @@ def _extract_from_clause_tables(sql_text: str) -> list[str]:
         clause = upper[pos:end]
         for chunk in _split_top_level_commas(clause):
             token = chunk.strip()
-            if not token or token.startswith("("):
+            if not token:
+                continue
+            if token.startswith("("):
+                for inner_sql in _extract_parenthesized_sql_segments(token):
+                    tables.extend(_extract_from_clause_tables(inner_sql, depth + 1))
                 continue
             ident, _ = _read_sql_identifier(token, 0)
             after_ident = token[len(ident) :].lstrip() if ident else ""
@@ -904,6 +930,8 @@ def _extract_from_clause_tables(sql_text: str) -> list[str]:
             normalized = _normalize_table_name(ident)
             if normalized:
                 tables.append(normalized)
+            for inner_sql in _extract_parenthesized_sql_segments(token):
+                tables.extend(_extract_from_clause_tables(inner_sql, depth + 1))
 
         idx = end
     return tables
