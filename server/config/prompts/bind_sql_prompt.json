@@ -1,7 +1,7 @@
 {
   "name": "bind_sql_generation",
-  "role": "Oracle bind candidate SQL generator",
-  "objective": "Generate one executable Oracle SQL statement that returns real bind candidate rows for the target query.",
+  "role": "Oracle 바인드 후보 SQL 생성기",
+  "objective": "대상 쿼리에 사용할 실제 바인드 후보 row를 반환하는 실행 가능한 Oracle SELECT 문 하나를 생성하십시오.",
   "inputs": {
     "from_sql": "{from_sql}",
     "tobe_sql": "{tobe_sql}",
@@ -11,25 +11,27 @@
     "last_error": "{last_error}"
   },
   "rules": [
-    "실행 가능한 SELECT 문 하나만 반환하십시오.",
-    "임의로 만든 리터럴 값이 아니라 실제 테이블 데이터를 사용하십시오.",
-    "bind_param_metadata_json을 읽고, all_bind_params에 나열된 모든 파라미터를 SELECT 출력 컬럼으로 반환하십시오.",
-    "required_bind_params에 나열된 파라미터는 MyBatis <if> 블록 밖의 필수 파라미터입니다. 실제 데이터가 존재하면 가능한 한 NULL이 아닌 실제 값을 사용하십시오.",
-    "conditional_bind_params에 나열된 파라미터는 MyBatis <if> 블록 안에서 사용되는 선택 파라미터입니다. 해당 test 표현식을 만족하는 후보 row에서만 NULL이 아닌 값이 되도록 하십시오.",
-    "각 출력 컬럼 alias는 바인드 파라미터명과 정확히 일치해야 하며, 따옴표 없는 Oracle alias를 사용하십시오.",
+    "실행 가능한 Oracle SELECT 문을 정확히 하나만 반환하십시오.",
+    "실제 테이블 데이터를 사용하십시오. 실제 데이터 소스가 전혀 없는 경우를 제외하고 임의의 리터럴 바인드 값을 만들지 마십시오.",
+    "bind_param_metadata_json을 읽고 all_bind_params에 나열된 모든 파라미터를 SELECT 출력 컬럼으로 반환하십시오.",
+    "각 출력 컬럼 alias는 바인드 파라미터명과 정확히 일치해야 하며, 유효한 Oracle alias여야 합니다.",
     "bind_target_hints_json을 바인드 파라미터명과 실제 소스 컬럼 사이의 우선 매핑 기준으로 사용하십시오.",
-    "mapping_schema_text는 프롬프트 생성 단계에서 ORACLE_SCHEMA_SRC/ORACLE_SCHEMA_TGT가 반영되어 FR_TABLE=SRC_SCHEMA.TABLE, TO_TABLE=TGT_SCHEMA.TABLE 형식으로 제공될 수 있습니다. 실행 가능한 bind 후보 SQL을 만들 때 이 스키마 정보를 판단 근거로 사용하십시오. 단, 스키마가 이미 붙은 테이블에 중복으로 스키마를 붙이지 마십시오.",
-    "from_sql 또는 tobe_sql에 WITH 절 CTE, 인라인 뷰, 서브쿼리로 정의된 가상 테이블이 있다면 해당 정의 SQL을 함께 포함하거나 보존하십시오. 가상 테이블 이름만 참조하여 실제 테이블처럼 조회하지 마십시오.",
-    "조합의 유효성을 보존하십시오. 여러 바인드 파라미터 값은 같은 실제 소스 row 또는 원본 쿼리의 조인 조건으로 연결된 row에서 나와야 합니다. 서로 무관한 row에서 독립적으로 고른 값을 조합하지 마십시오.",
-    "동일 소스 테이블 또는 원본 조인 row 구조에서 SELECT DISTINCT를 사용하는 방식을 우선하십시오. 서로 다른 바인드 컬럼을 채우기 위해 독립 scalar subquery, cross join, 무관한 파라미터 값의 UNION, 인위적인 Cartesian 조합을 사용하지 마십시오.",
-    "SELECT DISTINCT와 윈도우 함수(분석 함수)를 함께 사용할 때 결과 행 중복 제거 기준이 의도와 달라질 수 있으므로 충돌에 주의하십시오.",
-    "조건부 <if> test를 만족하지 않는 후보 row에서는 비활성 블록 안에서만 사용되는 파라미터를 NULL로 반환하십시오.",
-    "사용 가능한 바인드 파라미터나 소스 컬럼으로 MyBatis <if test> 표현식을 평가할 수 없다면 해당 <if> 블록은 비활성으로 간주하고, 활성화만을 위해 값을 지어내지 마십시오.",
-    "실제 데이터에 NULL 및 NULL이 아닌 선택 파라미터 조합이 존재한다면, 이를 커버하는 작지만 유용한 distinct 바인드 케이스 집합을 생성하십시오.",
-    "Oracle 11g 호환 문법만 사용하십시오. LIMIT, FETCH FIRST, OFFSET 또는 Oracle이 아닌 함수를 사용하지 마십시오.",
-    "MyBatis 태그, placeholder, markdown, 주석, JSON, 여러 SQL 문을 출력하지 마십시오.",
+    "mapping_schema_text를 사용해 실행 가능한 소스/타겟 테이블을 판단하십시오. 이미 스키마가 붙은 테이블에는 스키마를 중복으로 붙이지 마십시오.",
+    "from_sql 또는 tobe_sql 내부에 정의된 WITH 절, 인라인 뷰, 가상 테이블은 보존하십시오. 가상 테이블명을 실제 물리 테이블처럼 조회하지 마십시오.",
+    "바인드 조합의 row 정합성을 유지하십시오. 여러 바인드 파라미터 값은 동일한 실제 소스 row 또는 원본 조인 조건으로 연결된 row에서 나와야 합니다. 서로 무관한 row의 값을 독립적으로 섞지 마십시오.",
+    "동일한 실제 소스 row set 또는 원본 조인 row set에서 SELECT DISTINCT를 사용하는 방식을 우선하십시오.",
+    "Oracle 제약: SELECT DISTINCT를 사용할 때는 서브쿼리, 인라인 뷰, 스칼라 서브쿼리, CTE 분기, 중첩 SELECT 블록 내부에 ORDER BY를 넣지 마십시오. 단, 유효한 분석 함수/window 함수 표현식에 필요한 ORDER BY는 허용됩니다. Oracle은 SELECT DISTINCT와 유효하지 않은 내부 ORDER BY 조합에서 오류를 발생시킬 수 있습니다.",
+    "row 제한만을 위해 정렬이 필요한 경우 ORDER BY를 제거하거나, Oracle SELECT DISTINCT 규칙을 위반하지 않는 바깥 쿼리로 row 제한을 이동하십시오.",
+    "서로 다른 바인드 컬럼을 채우기 위해 독립적인 스칼라 서브쿼리, CROSS JOIN, 무관한 파라미터 값의 UNION, 인위적인 Cartesian 조합을 사용하지 마십시오.",
+    "MyBatis <if> 블록의 조건부 바인드 파라미터는 후보 row가 해당 test 조건을 만족할 때만 NULL이 아닌 값을 반환하십시오. 그렇지 않으면 NULL을 반환하십시오.",
+    "사용 가능한 소스 컬럼으로 MyBatis <if> test를 평가할 수 없다면 해당 블록은 비활성으로 간주하고, 활성화를 위해 값을 임의로 만들지 마십시오.",
+    "실제 데이터에 NULL 및 NULL이 아닌 선택 파라미터 조합이 모두 존재한다면, 이를 커버하는 작지만 유용한 distinct 바인드 케이스 집합을 생성하십시오.",
+    "Oracle 11g 호환 문법만 사용하십시오. LIMIT, FETCH FIRST, OFFSET, LATERAL, 비Oracle 함수는 사용하지 마십시오.",
+    "생성된 bind SQL에는 <if>, <choose>, <when>, <otherwise>, <where>, <trim>, <foreach> 같은 MyBatis XML 태그가 절대 포함되면 안 됩니다.",
+    "생성된 bind SQL에는 #{{param}}, ${{param}}, :param, ?, {{param}}, ${{...}} 같은 MyBatis placeholder 또는 미해결 placeholder가 절대 포함되면 안 됩니다.",
+    "markdown, 주석, JSON, 설명 문장, PL/SQL, 여러 SQL 문을 출력하지 마십시오.",
     "SQL 끝에 세미콜론(;)을 붙이지 마십시오.",
-    "row 제한이 필요하면 Oracle ROWNUM을 사용하여 최대 50개 후보 row만 반환하십시오."
+    "row 제한이 필요하면 Oracle ROWNUM을 바깥 쿼리에서 사용하고 최대 50개 후보 row만 반환하십시오."
   ],
-  "user_instruction": "Generate one executable Oracle SELECT statement only. The query must return valid same-row bind parameter combinations, not independently mixed parameter values. Do not end the SQL with a semicolon."
+  "user_instruction": "실행 가능한 Oracle SELECT 문 하나만 생성하십시오. 같은 row 기준의 유효한 바인드 파라미터 조합을 반환해야 합니다. MyBatis 태그, MyBatis placeholder, bind placeholder, markdown, 주석, JSON, 여러 SQL 문, 끝 세미콜론을 절대 포함하지 마십시오."
 }

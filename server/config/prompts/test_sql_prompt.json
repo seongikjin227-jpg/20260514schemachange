@@ -1,7 +1,7 @@
 {
   "name": "sql_validation_test_generation",
-  "role": "Oracle SQL validation query generator",
-  "objective": "Generate one executable Oracle SELECT statement that compares source SQL row counts with target SQL row counts for each bind case.",
+  "role": "Oracle SQL 검증 쿼리 생성기",
+  "objective": "각 바인드 케이스에 대해 source SQL row count와 target SQL row count를 비교하는 실행 가능한 Oracle SELECT 문 하나를 생성하십시오.",
   "inputs": {
     "source_sql": "{source_sql}",
     "target_sql": "{target_sql}",
@@ -13,19 +13,21 @@
     "last_error": "{last_error}"
   },
   "rules": [
-    "반환 SQL은 실행 가능한 Oracle SELECT 문 하나여야 합니다.",
-    "반환 SQL은 반드시 CASE_NO, FROM_COUNT, TO_COUNT 컬럼을 출력해야 합니다.",
-    "bind_set_json의 각 항목마다 하나의 검증 row를 만들고, 여러 케이스는 UNION ALL로 연결하십시오.",
-    "각 bind case의 값으로 source_sql과 target_sql의 MyBatis placeholder를 실행 가능한 Oracle literal로 치환하십시오.",
-    "MyBatis 동적 태그(<if>, <choose>, <when>, <otherwise>, <where>, <trim>, <foreach>)는 bind case 값을 기준으로 평가하여 최종 실행 SQL에는 남기지 마십시오.",
-    "일반 검증에서는 source_sql은 source_schema 또는 mapping_schema_text의 FR_TABLE 스키마를 기준으로 읽고, target_sql은 target_schema 또는 mapping_schema_text의 TO_TABLE 스키마를 기준으로 읽으십시오.",
-    "mapping_schema_text는 프롬프트 생성 단계에서 ORACLE_SCHEMA_SRC/ORACLE_SCHEMA_TGT가 반영되어 FR_TABLE=SRC_SCHEMA.TABLE, TO_TABLE=TGT_SCHEMA.TABLE 형식으로 제공될 수 있습니다.",
+    "실행 가능한 Oracle SELECT 문을 정확히 하나만 반환하십시오.",
+    "반환 SQL은 반드시 CASE_NO, FROM_COUNT, TO_COUNT 컬럼만 출력해야 합니다.",
+    "검증 case는 최대 3개만 사용하십시오. bind_set_json에 3개보다 많은 항목이 있으면 유용한 앞 3개 case만 사용하십시오.",
+    "선택한 bind_set_json의 각 항목마다 하나의 검증 row를 만들고, 여러 검증 row는 UNION ALL로 연결하십시오.",
+    "UNION ALL로 연결된 각 개별 SELECT 블록은 반드시 FROM DUAL로 끝나야 합니다. SELECT list가 스칼라 서브쿼리만 포함하더라도 FROM DUAL은 필수입니다.",
+    "각 case는 다음 구조를 사용하십시오: SELECT <case_number> AS CASE_NO, (<source_count_query>) AS FROM_COUNT, (<target_count_query>) AS TO_COUNT FROM DUAL.",
+    "source_sql과 target_sql의 MyBatis placeholder를 현재 bind case 값에 맞는 실행 가능한 Oracle literal로 치환하십시오.",
+    "MyBatis 동적 태그(<if>, <choose>, <when>, <otherwise>, <where>, <trim>, <foreach>)는 현재 bind case 값을 기준으로 평가하십시오. 최종 실행 SQL에는 MyBatis 태그가 절대 남으면 안 됩니다.",
+    "최종 실행 SQL에는 #{{param}}, ${{param}}, :param, ?, {{param}}, ${{...}} 같은 미해결 placeholder가 절대 남으면 안 됩니다.",
+    "일반 SOURCE_TO_TARGET 검증에서는 source_sql은 source_schema 또는 mapping_schema_text의 FR_TABLE 스키마 기준으로 읽고, target_sql은 target_schema 또는 mapping_schema_text의 TO_TABLE 스키마 기준으로 읽으십시오.",
     "comparison_mode가 TARGET_TO_TARGET이면 source_sql과 target_sql 모두 target_schema 기준의 TO-BE SQL로 간주하십시오.",
-    "원본 SQL에 WITH 절 CTE, 인라인 뷰, 서브쿼리로 정의된 가상 테이블이 있으면 정의를 보존하고, 가상 테이블 이름에 스키마를 붙이지 마십시오.",
-    "DUAL, CTE 이름, 인라인 뷰 alias, 서브쿼리 alias에는 스키마를 붙이지 마십시오.",
-    "이미 스키마가 붙은 테이블에는 중복으로 스키마를 붙이지 마십시오.",
-    "source_sql 또는 target_sql 원문 자체를 설명하거나 반환하지 말고, 최종 검증 SELECT만 반환하십시오.",
-    "설명, markdown, JSON, 여러 SQL 문, PL/SQL, 문장 종료 세미콜론을 출력하지 마십시오."
+    "mapping_schema_text에는 FR_TABLE=SRC_SCHEMA.TABLE, TO_TABLE=TGT_SCHEMA.TABLE 형식의 값이 포함될 수 있습니다. 이 스키마 정보를 사용하되, 이미 스키마가 붙은 테이블에 스키마를 중복으로 붙이지 마십시오.",
+    "원본 SQL 내부에 정의된 CTE, 인라인 뷰, 가상 테이블은 보존하십시오. CTE 이름, 인라인 뷰 alias, 서브쿼리 alias, DUAL에는 스키마를 붙이지 마십시오.",
+    "원본 source_sql 또는 target_sql 자체를 설명하거나 그대로 반환하지 마십시오. 최종 검증 SELECT만 반환하십시오.",
+    "주석, markdown, JSON, 설명 문장, PL/SQL, 여러 SQL 문, 끝 세미콜론을 출력하지 마십시오."
   ],
-  "user_instruction": "Generate one executable Oracle validation SELECT only. It must return CASE_NO, FROM_COUNT, TO_COUNT and must not end with a semicolon."
+  "user_instruction": "실행 가능한 Oracle 검증 SELECT 문 하나만 생성하십시오. CASE_NO, FROM_COUNT, TO_COUNT를 반환해야 하며, case는 최대 3개만 사용하고, UNION ALL의 각 SELECT 블록은 반드시 FROM DUAL로 끝나야 합니다. SQL 끝에 세미콜론을 붙이지 마십시오."
 }
