@@ -5,6 +5,7 @@ LLM calls remain inside the DB migration, SQL conversion, and SQL tuning
 agents. The supervisor itself no longer asks an LLM which job to run.
 """
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -14,6 +15,9 @@ from langgraph.graph import END, StateGraph
 
 from server.agents.supervisor.state import SupervisorState
 import server.tools as supervisor_tools
+
+# .env 또는 환경변수에 SQL_CONVERSION_ONLY=true 설정 시 SQL 변환만 실행
+_SQL_CONVERSION_ONLY = os.getenv("SQL_CONVERSION_ONLY", "false").lower() == "true"
 
 _RUNTIME_DIR = Path(__file__).resolve().parent.parent.parent.parent / "runtime"
 PAUSE_FLAG = _RUNTIME_DIR / "agent.pause"
@@ -63,13 +67,15 @@ def build_supervisor_graph(
         supervisor_tools.start_cycle_metrics(cycle)
 
         mig_jobs, sql_jobs, tuning_jobs = [], [], []
-        try:
-            mig_jobs = get_migration_jobs()
-        except Exception as exc:
-            logger.error(f"[Supervisor] DataMigration polling error: {exc}")
+        if not _SQL_CONVERSION_ONLY:
+            try:
+                mig_jobs = get_migration_jobs()
+            except Exception as exc:
+                logger.error(f"[Supervisor] DataMigration polling error: {exc}")
         try:
             sql_jobs = get_sql_jobs()
-            tuning_jobs = get_tuning_jobs()
+            if not _SQL_CONVERSION_ONLY:
+                tuning_jobs = get_tuning_jobs()
         except Exception as exc:
             logger.error(f"[Supervisor] SQL/Tuning polling error: {exc}")
 
@@ -113,22 +119,24 @@ def build_supervisor_graph(
 
         logger.info("[Supervisor] 작업 실행 시작")
 
-        for job in list(mig_registry.values()):
-            retry = getattr(job, "retry_count", 0) or 0
-            if retry >= 3:
-                logger.warning(
-                    f"[Supervisor] DataMigration map_id={job.map_id} skip "
-                    f"(retry={retry} >= 3)"
-                )
-                continue
-            supervisor_tools.run_data_migration.invoke({"map_id": job.map_id})
+        if not _SQL_CONVERSION_ONLY:
+            for job in list(mig_registry.values()):
+                retry = getattr(job, "retry_count", 0) or 0
+                if retry >= 3:
+                    logger.warning(
+                        f"[Supervisor] DataMigration map_id={job.map_id} skip "
+                        f"(retry={retry} >= 3)"
+                    )
+                    continue
+                supervisor_tools.run_data_migration.invoke({"map_id": job.map_id})
 
         for job in list(sql_registry.values()):
             supervisor_tools.run_sql_conversion.invoke({"row_id": str(job.row_id)})
 
-        tuning_row_ids = [str(job.row_id) for job in tuning_registry.values()]
-        if tuning_row_ids:
-            supervisor_tools.run_sql_tuning.invoke({"row_ids": tuning_row_ids})
+        if not _SQL_CONVERSION_ONLY:
+            tuning_row_ids = [str(job.row_id) for job in tuning_registry.values()]
+            if tuning_row_ids:
+                supervisor_tools.run_sql_tuning.invoke({"row_ids": tuning_row_ids})
 
         return {"stop_requested": _stop_event.is_set() or state.get("stop_requested", False)}
 
