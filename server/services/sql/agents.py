@@ -66,7 +66,7 @@ class TobeSqlGenerationAgent:
         )
 
     def validate(self, state: JobExecutionState) -> None:
-        bind_param_names = extract_bind_param_names(state.tobe_sql) or extract_bind_param_names(state.job.source_sql)
+        bind_param_names = extract_bind_param_names(state.job.source_sql) or extract_bind_param_names(state.tobe_sql)
         state.bind_param_names = bind_param_names
         if not bind_param_names:
             state.bind_sql = ""

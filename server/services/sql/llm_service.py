@@ -433,9 +433,9 @@ def generate_bind_sql(
 ) -> str:
     scoped_rules = _select_mapping_rules_for_job(job=job, mapping_rules=mapping_rules or [])
     bind_target_hints = build_bind_target_hints(tobe_sql=tobe_sql, source_sql=job.source_sql)
-    bind_param_metadata = build_bind_param_metadata(tobe_sql)
+    bind_param_metadata = build_bind_param_metadata(job.source_sql)
     if not bind_param_metadata.get("all_bind_params"):
-        bind_param_metadata = build_bind_param_metadata(job.source_sql)
+        bind_param_metadata = build_bind_param_metadata(tobe_sql)
     return call_llm_api(
         api_key=None,
         model=None,
@@ -443,8 +443,6 @@ def generate_bind_sql(
         messages=_build_sql_messages(
             "bind_sql_prompt.json",
             from_sql=job.source_sql,
-            tobe_sql=tobe_sql,
-            mapping_schema_text=_serialize_mapping_rules(scoped_rules),
             bind_param_metadata_json=json.dumps(bind_param_metadata, ensure_ascii=False, indent=2),
             bind_target_hints_json=json.dumps(bind_target_hints, ensure_ascii=False, indent=2),
             last_error=last_error or "None",
@@ -509,7 +507,6 @@ def _generate_validation_test_sql(
             "test_sql_prompt.json",
             source_sql=source_sql,
             target_sql=target_sql,
-            mapping_schema_text=mapping_schema_text,
             source_schema=source_schema or "UNKNOWN",
             target_schema=target_schema or "UNKNOWN",
             bind_set_json=_load_bind_sets_json(bind_set_json),

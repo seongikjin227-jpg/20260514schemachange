@@ -309,10 +309,10 @@ def _extract_direct_bind_column_map(sql_text: str) -> dict[str, list[str]]:
 def build_bind_target_hints(tobe_sql: str, source_sql: str) -> dict[str, list[str]]:
     """
     bind 파라미터 -> 후보 물리 컬럼 맵을 반환한다.
-    우선순위: TO-BE SQL 우선, 누락 시 SOURCE SQL 보강.
+    우선순위: SOURCE SQL 우선, 누락 시 TO-BE SQL 보강.
     """
-    merged = _extract_direct_bind_column_map(tobe_sql)
-    fallback = _extract_direct_bind_column_map(source_sql)
+    merged = _extract_direct_bind_column_map(source_sql)
+    fallback = _extract_direct_bind_column_map(tobe_sql)
     for param, columns in fallback.items():
         if param not in merged:
             merged[param] = list(columns)
@@ -336,9 +336,9 @@ def build_bind_sets(
     2) 값 중복이 적은 케이스
     """
     safe_max = max(1, min(max_cases, 3))
-    param_names = extract_bind_param_names(tobe_sql)
+    param_names = extract_bind_param_names(source_sql)
     if not param_names:
-        param_names = extract_bind_param_names(source_sql)
+        param_names = extract_bind_param_names(tobe_sql)
     if not param_names:
         return []
 
