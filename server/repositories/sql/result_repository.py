@@ -142,6 +142,14 @@ def _row_to_sql_info_job(row) -> SqlInfoJob:
 def get_pending_jobs() -> list[SqlInfoJob]:
     table = get_result_table()
     available_columns = _get_available_columns(table)
+    fr_sql_length_expr = "DBMS_LOB.GETLENGTH(FR_SQL_TEXT)"
+    edit_fr_sql_length_expr = "DBMS_LOB.GETLENGTH(EDIT_FR_SQL)"
+    effective_fr_sql_length_expr = (
+        f"CASE "
+        f"WHEN NVL({edit_fr_sql_length_expr}, 0) > 0 THEN {edit_fr_sql_length_expr} "
+        f"WHEN NVL({fr_sql_length_expr}, 0) > 0 THEN {fr_sql_length_expr} "
+        f"ELSE 999999999 END"
+    )
     select_correct_cols = ", ".join(
         column
         if column in available_columns
@@ -176,6 +184,7 @@ def get_pending_jobs() -> list[SqlInfoJob]:
             WHEN STATUS IS NULL THEN 6
             ELSE 9
           END,
+          {effective_fr_sql_length_expr} ASC,
           UPD_TS NULLS FIRST,
           TO_CHAR(SPACE_NM),
           TO_CHAR(SQL_ID)
