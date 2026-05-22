@@ -1,4 +1,4 @@
-"""마이그레이션 agent와 coordinator."""
+"""SQL conversion and tuning agent coordinator."""
 
 import os
 import random
@@ -18,7 +18,6 @@ from server.services.sql.llm_service import (
     generate_bind_sql,
     generate_sql_comparison_test_sql,
     generate_test_sql,
-    generate_test_sql_no_bind,
     generate_tobe_sql,
     serialize_tuning_examples_for_prompt,
     tune_tobe_sql,
@@ -34,18 +33,19 @@ from server.services.sql.workflow.state import JobExecutionState
 
 
 class MappingRuleProvider:
-    """매핑 룰을 한 번 읽고 여러 job에서 재사용한다."""
+    """Loads mapping rules shared by SQL conversion jobs."""
 
     def get_rules(self) -> list:
         return get_all_mapping_rules()
 
 
 class TobeSqlGenerationAgent:
-    """baseline TO-BE SQL을 생성하고 검증한다.
+    """Generates baseline TO-BE SQL and validates it.
 
-    핵심 원칙:
-    - tobe_rule_catalog.json 을 사용하지 않는다.
-    - TO-BE 생성은 원본 SQL, 매핑 룰, 직전 오류만 기준으로 수행한다.
+    Responsibilities:
+    - Generate TO-BE SQL from the original SQL, mapping rules, and retry error.
+    - Build bind sets when bind parameters exist.
+    - Generate and execute validation Test SQL.
     """
 
     name = "tobe_sql_generation_agent"
@@ -71,13 +71,11 @@ class TobeSqlGenerationAgent:
         if not bind_param_names:
             state.bind_sql = ""
             state.bind_set_for_db = None
-            state.bind_set_json_for_test = "[]"
+            state.bind_set_json_for_test = "[{}]"
             logger.info(f"[{self.name}] ({state.job_key}) stage=SKIP_BIND completed (reason=no_bind_params)")
         else:
             state.bind_sql = generate_bind_sql(
                 job=state.job,
-                tobe_sql=state.tobe_sql,
-                mapping_rules=state.mapping_rules,
                 last_error=state.last_error,
             )
             logger.info(
@@ -92,8 +90,6 @@ class TobeSqlGenerationAgent:
             )
 
             bind_sets = build_bind_sets(
-                tobe_sql=state.tobe_sql,
-                source_sql=state.job.source_sql,
                 bind_query_rows=bind_query_rows,
                 max_cases=3,
             )
@@ -104,21 +100,12 @@ class TobeSqlGenerationAgent:
                 f"completed (cases={len(bind_sets)})"
             )
 
-        if state.bind_param_names:
-            state.test_sql = generate_test_sql(
-                job=state.job,
-                tobe_sql=state.tobe_sql,
-                bind_set_json=state.bind_set_json_for_test,
-                mapping_rules=state.mapping_rules,
-                last_error=state.last_error,
-            )
-        else:
-            state.test_sql = generate_test_sql_no_bind(
-                job=state.job,
-                tobe_sql=state.tobe_sql,
-                mapping_rules=state.mapping_rules,
-                last_error=state.last_error,
-            )
+        state.test_sql = generate_test_sql(
+            job=state.job,
+            tobe_sql=state.tobe_sql,
+            bind_set_json=state.bind_set_json_for_test,
+            last_error=state.last_error,
+        )
         logger.info(
             f"[{self.name}] ({state.job_key}) stage=GENERATE_TEST_SQL "
             f"completed (sql_length={len(state.test_sql)})"
@@ -138,11 +125,11 @@ class TobeSqlGenerationAgent:
 
 
 class SqlTuningAgent:
-    """baseline 검증을 통과한 뒤 TO-BE SQL 튜닝을 적용한다.
+    """Applies tuning rules to TO-BE SQL after baseline validation.
 
-    핵심 원칙:
-    - RAG/FAISS 로 block별 top-k 튜닝 룰을 검색한다.
-    - TOBE_SQL_TUNING_MAX_ITERATIONS=0 이면 튜닝을 비활성화한다.
+    Responsibilities:
+    - Retrieve top tuning examples with RAG/FAISS.
+    - Skip tuning when TOBE_SQL_TUNING_MAX_ITERATIONS is 0.
     """
 
     name = "sql_tuning_agent"
@@ -211,7 +198,7 @@ class SqlTuningAgent:
 
 
 class TobeMultiAgentCoordinator:
-    """재시도, 그래프 호출, DB 저장을 조율한다."""
+    """Runs the SQL conversion workflow and persists job results."""
 
     def __init__(
         self,
@@ -415,3 +402,4 @@ class TobeMultiAgentCoordinator:
             to_count = cls._get_case_insensitive_value(row, "to_count")
             samples.append(f"CASE_NO={case_no},FROM_COUNT={from_count},TO_COUNT={to_count}")
         return " ; ".join(samples)
+

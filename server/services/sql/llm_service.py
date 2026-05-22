@@ -426,8 +426,6 @@ def generate_tobe_sql(
 
 def generate_bind_sql(
     job: SqlInfoJob,
-    tobe_sql: str,
-    mapping_rules: list[MappingRuleItem] | None = None,
     last_error: str | None = None,
 ) -> str:
     return call_llm_api(
@@ -486,7 +484,6 @@ def _generate_validation_test_sql(
     source_sql: str,
     target_sql: str,
     bind_set_json: str | None,
-    mapping_schema_text: str,
     source_schema: str,
     target_schema: str,
     comparison_mode: str,
@@ -513,15 +510,12 @@ def generate_test_sql(
     job: SqlInfoJob,
     tobe_sql: str,
     bind_set_json: str,
-    mapping_rules: list[MappingRuleItem] | None = None,
     last_error: str | None = None,
 ) -> str:
-    scoped_rules = _select_mapping_rules_for_job(job=job, mapping_rules=mapping_rules or [])
     return _generate_validation_test_sql(
         source_sql=job.source_sql,
         target_sql=tobe_sql,
         bind_set_json=bind_set_json,
-        mapping_schema_text=_serialize_mapping_rules(scoped_rules),
         source_schema=_schema_env("ORACLE_SCHEMA_SRC"),
         target_schema=_schema_env("ORACLE_SCHEMA_TGT"),
         comparison_mode="SOURCE_TO_TARGET",
@@ -540,24 +534,8 @@ def generate_sql_comparison_test_sql(
         source_sql=baseline_sql,
         target_sql=candidate_sql,
         bind_set_json=bind_set_json,
-        mapping_schema_text="[MAPPING_RULES]\n- (target-to-target tuning comparison)",
         source_schema=target_schema,
         target_schema=target_schema,
         comparison_mode="TARGET_TO_TARGET",
-        last_error=last_error,
-    )
-
-
-def generate_test_sql_no_bind(
-    job: SqlInfoJob,
-    tobe_sql: str,
-    mapping_rules: list[MappingRuleItem] | None = None,
-    last_error: str | None = None,
-) -> str:
-    return generate_test_sql(
-        job=job,
-        tobe_sql=tobe_sql,
-        bind_set_json="[{}]",
-        mapping_rules=mapping_rules,
         last_error=last_error,
     )

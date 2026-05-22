@@ -20,6 +20,7 @@
         "Do not end the SQL with a semicolon.",
         "If a row limit is needed, apply Oracle ROWNUM in an outer query and return at most 50 candidate rows.",
         "[Bind parameter extraction rules]",
+        "If from_sql contains no bind parameters after inspecting placeholders, dynamic tags, and foreach usage, return exactly SELECT 1 AS \"NO_BIND\" FROM DUAL.",
         "Analyze MyBatis bind expressions in from_sql, including #{{...}}, ${{...}}, and foreach item/index usage, and return the required bind parameters as SELECT output columns.",
         "The source of truth for bind parameter extraction is from_sql. Discover parameters only by directly inspecting from_sql, including WHERE, JOIN, subqueries, MyBatis dynamic tags, and foreach bodies.",
         "Use only tables, columns, joins, and SELECT expressions explicitly present in from_sql. Do not reconstruct missing objects from mapping rules.",
@@ -53,5 +54,5 @@
         "Oracle requires ORDER BY expressions in SELECT DISTINCT queries to appear in the SELECT list. Prefer removing ORDER BY in bind candidate SQL.",
         "If ordering was only used for row limiting, remove ORDER BY or move row limiting to an outer query without violating Oracle SELECT DISTINCT rules."
     ],
-    "user_instruction": "Generate exactly one executable Oracle SELECT statement. Schema-qualify physical tables with from_schema and preserve existing qualifiers in from_sql. Determine bind parameters and candidate columns directly from from_sql; do not infer or reconstruct missing tables, columns, or joins. In final retry mode (FINAL_RETRY_MODE=ON or attempt=3/3), completely bypass dynamic tag condition evaluation and related joins; return parameters used only inside dynamic tags as CAST(NULL AS VARCHAR2(4000)) AS \"param\". Do not include MyBatis tags, MyBatis placeholders, bind placeholders, markdown, comments, JSON, multiple SQL statements, or a trailing semicolon."
+    "user_instruction": "Generate exactly one executable Oracle SELECT statement. Schema-qualify physical tables with from_schema and preserve existing qualifiers in from_sql. Determine bind parameters and candidate columns directly from from_sql; do not infer or reconstruct missing tables, columns, or joins. If no bind parameters exist, return exactly SELECT 1 AS \"NO_BIND\" FROM DUAL. In final retry mode (FINAL_RETRY_MODE=ON or attempt=3/3), completely bypass dynamic tag condition evaluation and related joins; return parameters used only inside dynamic tags as CAST(NULL AS VARCHAR2(4000)) AS \"param\". Do not include MyBatis tags, MyBatis placeholders, bind placeholders, markdown, comments, JSON, multiple SQL statements, or a trailing semicolon."
 }
