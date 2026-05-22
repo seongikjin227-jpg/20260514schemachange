@@ -9,13 +9,7 @@ from typing import Any
 
 _BIND_TOKEN_PATTERN = re.compile(r"[#$]\{\s*([^}]+?)\s*\}")
 _IF_TEST_PATTERN = re.compile(r"<if\b[^>]*\btest\s*=\s*['\"](.*?)['\"][^>]*>", re.IGNORECASE | re.DOTALL)
-_TEST_TAG_PATTERN = re.compile(r"<(if|when)\b[^>]*\btest\s*=\s*(['\"])(.*?)\2[^>]*>", re.IGNORECASE | re.DOTALL)
-_OTHERWISE_TAG_PATTERN = re.compile(r"<otherwise\b[^>]*>(.*?)</\s*otherwise\s*>", re.IGNORECASE | re.DOTALL)
 _IDENTIFIER_PATTERN = re.compile(r"\b([A-Za-z_][A-Za-z0-9_\.]*)\b")
-_DIRECT_BIND_COMPARISON_PATTERN = re.compile(
-    r"([A-Za-z_][A-Za-z0-9_\.]*)\s*(?:=|<>|!=|>=|<=|>|<|LIKE|IN)\s*[#$]\{\s*([^}]+?)\s*\}",
-    re.IGNORECASE,
-)
 _TEST_LITERAL_COMPARE_PATTERN = re.compile(
     r"\b([A-Za-z_][A-Za-z0-9_\.]*)\s*(==|=|eq|!=|<>|ne)\s*('([^']*)'|\"([^\"]*)\"|true|false|null)",
     re.IGNORECASE,
@@ -68,54 +62,6 @@ def extract_bind_param_names(sql_text: str) -> list[str]:
             names.append(name)
             seen.add(name)
     return names
-
-
-def build_bind_param_metadata(sql_text: str) -> dict[str, Any]:
-    """bind 파라미터를 필수/조건부 그룹으로 분류한다."""
-    source = sql_text or ""
-    all_params = extract_bind_param_names(source)
-    conditional_groups: list[dict[str, Any]] = []
-    conditional_seen: set[str] = set()
-
-    for tag, test_expr, body in _iter_conditional_blocks(source):
-        test_expr = (test_expr or "").strip()
-        params = extract_bind_param_names(body)
-        if not params:
-            continue
-        conditional_groups.append({"tag": tag, "test": test_expr, "params": params})
-        conditional_seen.update(params)
-
-    for body in _iter_otherwise_bodies(source):
-        params = extract_bind_param_names(body)
-        if not params:
-            continue
-        conditional_groups.append({"tag": "otherwise", "test": "", "params": params})
-        conditional_seen.update(params)
-
-    return {
-        "required_bind_params": [param for param in all_params if param not in conditional_seen],
-        "conditional_bind_params": conditional_groups,
-        "all_bind_params": all_params,
-    }
-
-
-def _iter_conditional_blocks(sql_text: str) -> list[tuple[str, str, str]]:
-    blocks: list[tuple[str, str, str]] = []
-    source = sql_text or ""
-    for match in _TEST_TAG_PATTERN.finditer(source):
-        tag = match.group(1).lower()
-        test_expr = match.group(3) or ""
-        body_start = match.end()
-        close_match = re.search(rf"</\s*{tag}\s*>", source[body_start:], flags=re.IGNORECASE)
-        if not close_match:
-            continue
-        body = source[body_start : body_start + close_match.start()]
-        blocks.append((tag, test_expr, body))
-    return blocks
-
-
-def _iter_otherwise_bodies(sql_text: str) -> list[str]:
-    return [match.group(1) or "" for match in _OTHERWISE_TAG_PATTERN.finditer(sql_text or "")]
 
 
 def _merge_unique(*groups: list[str]) -> list[str]:
@@ -289,40 +235,6 @@ def _value_signature(bind_case: dict[str, Any]) -> tuple:
     return tuple((k, bind_case.get(k)) for k in sorted(bind_case.keys()))
 
 
-def _extract_direct_bind_column_map(sql_text: str) -> dict[str, list[str]]:
-    """`COL = #{param}` 패턴을 찾아 param->컬럼 후보 맵을 만든다."""
-    if not sql_text:
-        return {}
-    mapped: dict[str, list[str]] = {}
-    for match in _DIRECT_BIND_COMPARISON_PATTERN.finditer(sql_text):
-        column_name = match.group(1).strip()
-        param_name = _normalize_param_name(match.group(2))
-        if not param_name or not column_name:
-            continue
-        if param_name not in mapped:
-            mapped[param_name] = []
-        if column_name not in mapped[param_name]:
-            mapped[param_name].append(column_name)
-    return mapped
-
-
-def build_bind_target_hints(tobe_sql: str, source_sql: str) -> dict[str, list[str]]:
-    """
-    bind 파라미터 -> 후보 물리 컬럼 맵을 반환한다.
-    우선순위: SOURCE SQL 우선, 누락 시 TO-BE SQL 보강.
-    """
-    merged = _extract_direct_bind_column_map(source_sql)
-    fallback = _extract_direct_bind_column_map(tobe_sql)
-    for param, columns in fallback.items():
-        if param not in merged:
-            merged[param] = list(columns)
-            continue
-        for column_name in columns:
-            if column_name not in merged[param]:
-                merged[param].append(column_name)
-    return merged
-
-
 def build_bind_sets(
     tobe_sql: str,
     source_sql: str,
@@ -342,7 +254,9 @@ def build_bind_sets(
     if not param_names:
         return []
 
-    if_groups = _extract_if_param_groups(tobe_sql)
+    if_groups = _extract_if_param_groups(source_sql)
+    if not if_groups:
+        if_groups = _extract_if_param_groups(tobe_sql)
     selected: list[dict[str, Any]] = []
     seen_value_signatures = set()
     seen_if_signatures = set()

@@ -1,4 +1,4 @@
-﻿"""mapper XML을 파싱해 NEXT_SQL_INFO로 동기화하는 유틸 파이프라인."""
+"""mapper XML을 파싱해 NEXT_SQL_INFO로 동기화하는 유틸 파이프라인."""
 
 from __future__ import annotations
 
@@ -650,6 +650,7 @@ def expand_include_to_edit_sql() -> dict[str, int]:
     return {"include_candidates": include_candidates, "updated": len(updates)}
 
 
+
 def _validate_sql_identifier(name: str) -> str:
     """유틸 SQL에서 식별자 인젝션을 막기 위해 허용 문자만 통과시킨다."""
     normalized = (name or "").strip()
@@ -768,11 +769,12 @@ def _read_sql_identifier(text: str, start_idx: int) -> tuple[str, int]:
 def _extract_cte_names(sql_text: str) -> set[str]:
     """WITH 절에 선언된 CTE 이름을 추출한다."""
     upper = sql_text.upper().lstrip()
-    if not upper.startswith("WITH "):
+    match = re.match(r"WITH\b", upper)
+    if not match:
         return set()
 
     cte_names: set[str] = set()
-    idx = upper.find("WITH") + 4
+    idx = match.end()
     length = len(upper)
     while idx < length:
         while idx < length and upper[idx].isspace():
@@ -781,8 +783,6 @@ def _extract_cte_names(sql_text: str) -> set[str]:
         normalized = _normalize_table_name(ident)
         if not normalized:
             break
-        cte_names.add(normalized)
-        cte_names.add(normalized.split(".")[-1])
 
         while idx < length and upper[idx].isspace():
             idx += 1
@@ -792,6 +792,8 @@ def _extract_cte_names(sql_text: str) -> set[str]:
             idx += 1
         if not upper[idx : idx + 2] == "AS":
             break
+        cte_names.add(normalized)
+        cte_names.add(normalized.split(".")[-1])
         idx += 2
         while idx < length and upper[idx].isspace():
             idx += 1
@@ -805,6 +807,31 @@ def _extract_cte_names(sql_text: str) -> set[str]:
             continue
         break
     return cte_names
+
+
+def _extract_all_cte_names(sql_text: str) -> set[str]:
+    """SQL 전체에서 WITH 절에 선언된 CTE 이름을 모두 추출한다."""
+    cleaned = _strip_sql_for_table_parse(sql_text)
+    cte_names: set[str] = set()
+    for match in re.finditer(r"\bWITH\b", cleaned, flags=re.IGNORECASE):
+        cte_names.update(_extract_cte_names(cleaned[match.start() :]))
+    return cte_names
+
+
+def _remove_cte_names_from_target_tables(target_tables: list[str], sql_text: str) -> list[str]:
+    """TARGET_TABLE 목록에서 WITH 절 CTE 이름을 제거한다."""
+    cte_names = _extract_all_cte_names(sql_text)
+    if not cte_names:
+        return target_tables
+
+    filtered: list[str] = []
+    for table_name in target_tables:
+        normalized = _normalize_table_name(table_name)
+        table_short = normalized.split(".")[-1].strip('"') if normalized else ""
+        if normalized in cte_names or table_short in cte_names:
+            continue
+        filtered.append(table_name)
+    return filtered
 
 
 def _split_top_level_commas(text: str) -> list[str]:
@@ -1241,7 +1268,7 @@ def cleanup_next_sql_info_rows() -> dict[str, int]:
         base_sql = (edit_fr_sql.strip() or fr_sql_text)
         parsed_target_tables = _extract_target_tables_from_sql(base_sql)
         target_tables = parsed_target_tables if parsed_target_tables else stored_target_tables
-
+        target_tables = _remove_cte_names_from_target_tables(target_tables, base_sql)
         serialized_target_table = json.dumps(target_tables, ensure_ascii=False) if target_tables else ""
         current_serialized = target_table_value.strip()
         if serialized_target_table != current_serialized:
@@ -1349,3 +1376,6 @@ def _main():
 
 if __name__ == "__main__":
     _main()
+
+
+

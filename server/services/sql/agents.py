@@ -250,7 +250,13 @@ class TobeMultiAgentCoordinator:
             return
 
         while retry_count < max_retries:
-            state = self._build_state(job=job, last_error=state.last_error)
+            raw_last_error = state.last_error
+            state = self._build_state(job=job, last_error=raw_last_error)
+            state.last_error = self._build_retry_prompt_context(
+                last_error=raw_last_error,
+                attempt=retry_count + 1,
+                max_retries=max_retries,
+            )
             try:
                 graph_result = self.graph.invoke({"execution": state, "terminal_action": None})
                 state = graph_result["execution"]
@@ -308,6 +314,22 @@ class TobeMultiAgentCoordinator:
             job_key=f"{job.space_nm}.{job.sql_id}",
             mapping_rules=self.mapping_rule_provider.get_rules(),
             last_error=last_error,
+        )
+
+    @staticmethod
+    def _build_retry_prompt_context(
+        last_error: str | None,
+        attempt: int,
+        max_retries: int,
+    ) -> str | None:
+        if not last_error:
+            return None
+        final_retry_mode = attempt >= max_retries
+        mode = "ON" if final_retry_mode else "OFF"
+        return (
+            f"RETRY_CONTEXT: attempt={attempt}/{max_retries}; "
+            f"FINAL_RETRY_MODE={mode}; "
+            f"last_error={last_error}"
         )
 
     @staticmethod
