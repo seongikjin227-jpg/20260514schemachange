@@ -17,12 +17,12 @@
         "from_sql에 이미 schema가 붙어 있는 물리 테이블은 그대로 유지하고 schema를 중복으로 붙이지 않는다.",
         "CTE, inline view, subquery alias, table alias, DUAL은 물리 테이블이 아니므로 schema를 붙이지 않는다.",
         "최종 Bind SQL에는 MyBatis XML 태그(<if>, <choose>, <when>, <otherwise>, <where>, <trim>, <foreach>)가 남으면 안 된다.",
-        "최종 Bind SQL에는 #{{param}}, ${{param}}, :param, ?, {{{{param}}}} 같은 미해결 placeholder가 절대 남으면 안 된다.",
-        "SELECT list에서도 placeholder를 쓰면 안 된다. 예: SELECT DISTINCT #{{id}} AS \"id\" FROM ... 는 금지한다.",
-        "bind parameter 값은 반드시 실제 DB 컬럼 또는 실제 컬럼에서 온 표현식으로 반환한다. 예: SELECT DISTINCT A.ID AS \"id\" FROM FROM_SCHEMA.TABLE A.",
+        "최종 Bind SQL에는 #{{param}}, ${{param}} 같은 MyBatis 바인딩 파라미터 태그가 절대 남으면 안 된다.",
+        "SELECT list에서도 MyBatis 바인딩 파라미터 태그를 값처럼 쓰면 안 된다. 예: SELECT DISTINCT #{{id}} AS \"id\" FROM ... 는 금지한다.",
+        "bind parameter 값은 해당 parameter가 원본 조건에서 비교되는 대상 컬럼/표현식에서 가져온다. 대상은 물리 테이블 컬럼일 수도 있고, CTE/inline view/서브쿼리에서 계산된 alias일 수도 있다. 예: 원본 조건이 A.ID = #{{id}}라면 SELECT DISTINCT A.ID AS \"id\" FROM ... 형태로 반환한다.",
         "parameter 이름은 SELECT alias로만 사용한다. parameter 이름 자체를 SELECT expression으로 사용하지 않는다.",
-        "원본에 #{{id}}가 있으면 Bind SQL은 #{{id}}를 출력하는 SQL이 아니라, id 값을 제공할 실제 컬럼을 찾아 A.ID AS \"id\" 형태로 출력하는 SQL이어야 한다.",
-        "실제 컬럼을 찾을 수 없는 parameter는 placeholder를 남기지 말고 CAST(NULL AS VARCHAR2(4000)) AS \"<param>\" 형태로 반환한다.",
+        "원본에 A.ID = #{{id}}가 있으면 Bind SQL은 #{{id}}를 출력하는 SQL이 아니라, id와 비교되는 대상인 A.ID를 찾아 A.ID AS \"id\" 형태로 출력하는 SQL이어야 한다.",
+        "parameter와 직접 비교되는 대상이 CTE/inline view/서브쿼리 alias라면 그 alias를 만드는 row source를 보존해 해당 값을 반환한다. 대상 컬럼/표현식을 판단할 수 없으면 임의 literal이나 MyBatis 바인딩 파라미터 태그를 출력하지 말고, 해당 parameter를 반환하기 위한 최소 row source를 다시 검토한다.",
         "row 제한이 필요하면 Oracle ROWNUM을 바깥 query에서 사용하고 최대 50개 후보 row만 반환한다.",
         "[bind parameter 판단 규칙]",
         "from_sql을 직접 읽고 bind parameter를 판단한다. mapping rule이나 target SQL을 보고 parameter를 추정하지 않는다.",
@@ -48,12 +48,12 @@
         "일반 시도에서는 <if> 내부 parameter에 대해 조건을 평가할 수 있으면 실제 row 기준으로 값을 반환한다.",
         "<if> test를 실제 source column으로 평가할 수 없으면 해당 동적 block은 비활성으로 보고 값을 억지로 만들지 않는다.",
         "<choose>/<when>/<otherwise>는 실제로 활성화 가능한 branch만 고려한다.",
-        "<foreach>는 원래 collection parameter 의미를 유지하되, 최종 SQL에는 MyBatis 태그나 placeholder를 남기지 않는다.",
+        "<foreach>는 원래 collection parameter 의미를 유지하되, 최종 SQL에는 MyBatis 태그, MyBatis 바인딩 파라미터 태그, 미해결 파라미터 표현식을 남기지 않는다.",
         "[오류 복구 규칙]",
         "last_error가 있으면 이전 오류를 우선 해결한다.",
         "alias scope 오류, missing column 오류, 과도한 join 오류가 예상되면 SQL을 단순화한다.",
         "SELECT DISTINCT 안에서는 ORDER BY를 제거한다. Oracle은 DISTINCT와 ORDER BY 조합에서 SELECT list 제약이 강하다.",
         "row count 검증용 후보 추출에는 정렬이 필요 없으므로 ORDER BY는 가능하면 제거한다."
     ],
-    "user_instruction": "실행 가능한 Oracle SELECT 문 하나만 생성하라. 물리 테이블은 from_schema로 schema-qualified 처리하라. bind parameter와 후보 컬럼은 from_sql에서 직접 판단하라. bind parameter가 없으면 정확히 SELECT 1 AS \"NO_BIND\" FROM DUAL 을 반환하라. SYSDATE, CURRENT_DATE, SYSTIMESTAMP, TRUNC(SYSDATE), ADD_MONTHS(SYSDATE, ...) 등 현재일 기준 기간 조건은 제거하고 bind 후보를 추출하라. MyBatis 태그, MyBatis placeholder, bind placeholder, markdown, 주석, JSON, 여러 SQL 문, trailing semicolon을 포함하지 마라. TO_DATE(...), DATE literal, TIMESTAMP literal이 포함된 날짜 비교/기간 조건도 제거하라. SELECT list에 #{{param}}, ${{param}}, :param, ? 같은 placeholder를 절대 쓰지 마라. parameter 이름은 alias로만 쓰고, 값 expression은 실제 DB 컬럼이어야 한다. 실제 컬럼을 찾을 수 없으면 placeholder 대신 CAST(NULL AS VARCHAR2(4000)) AS \"param\"을 반환하라."
+    "user_instruction": "실행 가능한 Oracle SELECT 문 하나만 생성하라. 물리 테이블은 from_schema로 schema-qualified 처리하라. bind parameter와 후보 컬럼은 from_sql에서 직접 판단하라. bind parameter가 없으면 정확히 SELECT 1 AS \"NO_BIND\" FROM DUAL 을 반환하라. SYSDATE, CURRENT_DATE, SYSTIMESTAMP, TRUNC(SYSDATE), ADD_MONTHS(SYSDATE, ...) 등 현재일 기준 기간 조건은 제거하고 bind 후보를 추출하라. MyBatis 태그, MyBatis 바인딩 파라미터 태그, bind 파라미터 표현식, markdown, 주석, JSON, 여러 SQL 문, trailing semicolon을 포함하지 마라. TO_DATE(...), DATE literal, TIMESTAMP literal이 포함된 날짜 비교/기간 조건도 제거하라. SELECT list에 #{{param}}, ${{param}} 같은 MyBatis 바인딩 파라미터 태그나 :param, ? 같은 bind 파라미터 표현식을 절대 쓰지 마라. parameter 이름은 alias로만 쓰고, 값 expression은 원본 조건에서 해당 parameter와 비교되는 대상 컬럼/표현식이어야 한다. 대상은 물리 테이블 컬럼, CTE/inline view alias, 서브쿼리에서 계산된 표현식일 수 있다. 임의 literal이나 MyBatis 바인딩 파라미터 태그를 값으로 출력하지 마라."
 }
