@@ -24,17 +24,18 @@
         "원본에 A.ID = #{{id}}가 있으면 Bind SQL은 #{{id}}를 출력하는 SQL이 아니라, id와 비교되는 대상인 A.ID를 찾아 A.ID AS \"id\" 형태로 출력하는 SQL이어야 한다.",
         "parameter와 직접 비교되는 대상이 CTE/inline view/서브쿼리 alias라면 그 alias를 만드는 row source를 보존해 해당 값을 반환한다. 대상 컬럼/표현식을 판단할 수 없으면 임의 literal이나 MyBatis 바인딩 파라미터 태그를 출력하지 말고, 해당 parameter를 반환하기 위한 최소 row source를 다시 검토한다.",
         "row 제한이 필요하면 Oracle ROWNUM을 바깥 query에서 사용하고 최대 50개 후보 row만 반환한다.",
+
         "[bind parameter 판단 규칙]",
-        "from_sql을 직접 읽고 bind parameter를 판단한다. mapping rule이나 target SQL을 보고 parameter를 추정하지 않는다.",
+        "from_sql을 직접 읽고 bind parameter를 판단한다.",
         "감지 대상은 #{{...}}, ${{...}}, <foreach collection=\"...\">, <if test=\"...\">, <when test=\"...\">에 등장하는 parameter이다.",
         "<foreach>에서는 item/index가 아니라 collection 값이 외부 입력 parameter이다.",
         "bind parameter가 전혀 없다고 판단되면 정확히 SELECT 1 AS \"NO_BIND\" FROM DUAL 을 반환한다.",
         "최상위 SELECT list는 bind parameter만 반환한다.",
         "각 output column alias는 MyBatis parameter 이름과 정확히 일치해야 하며 반드시 double quote로 감싼다.",
         "여러 bind parameter가 있으면 같은 SELECT에서 함께 반환한다.",
-        "여러 parameter 값은 같은 실제 source row 또는 원본 join 조건으로 연결된 row에서 가져와야 한다.",
         "서로 관계없는 scalar subquery, CROSS JOIN, artificial Cartesian product로 parameter 값을 조합하지 않는다.",
         "가능하면 SELECT DISTINCT를 사용해 중복 후보를 줄인다.",
+
         "[기간/현재일 조건 제거 규칙]",
         "SYSDATE, CURRENT_DATE, SYSTIMESTAMP, CURRENT_TIMESTAMP, TRUNC(SYSDATE), ADD_MONTHS(SYSDATE, ...), LAST_DAY(SYSDATE)가 들어간 기간 조건은 bind 후보 추출에서 제거한다.",
         "TO_DATE(...), DATE 'YYYY-MM-DD', TIMESTAMP 'YYYY-MM-DD ...' 같은 고정 날짜 literal이 들어간 기간 조건도 제거한다.",
@@ -42,18 +43,18 @@
         "날짜 조건을 정확히 안전하게 분리하기 어렵다면, 해당 날짜 비교 조건 전체를 제거하고 남은 비날짜 조건만 유지한다.",
         "예: COL <= SYSDATE, COL >= TRUNC(SYSDATE), SYSDATE BETWEEN START_DT AND END_DT, START_DT <= SYSDATE AND END_DT >= SYSDATE 조건은 제거한다.",
         "예: WHERE A.IS_ACTIVE = 'Y' AND SYSDATE BETWEEN A.START_DT AND A.END_DT 라면 bind 후보 추출에서는 A.IS_ACTIVE = 'Y'만 유지한다.",
-        "현재일 기준 기간 조건은 count가 0으로 떨어지는 원인이 되므로 bind 후보를 좁히는 filter로 사용하지 않는다.",
-        "단, 날짜 컬럼 자체가 bind parameter로 필요한 경우에는 해당 컬럼 값을 SELECT alias로 반환할 수 있다. 하지만 그 컬럼을 SYSDATE와 비교해 후보를 필터링하지 않는다.",
+        
         "[동적 태그 처리 규칙]",
         "일반 시도에서는 <if> 내부 parameter에 대해 조건을 평가할 수 있으면 실제 row 기준으로 값을 반환한다.",
         "<if> test를 실제 source column으로 평가할 수 없으면 해당 동적 block은 비활성으로 보고 값을 억지로 만들지 않는다.",
-        "<choose>/<when>/<otherwise>는 실제로 활성화 가능한 branch만 고려한다.",
+        "<choose>/<when>/<otherwise>는 첫 번째 <when>절 branch를 사용하는 것을 기본으로 한다.",
         "<foreach>는 원래 collection parameter 의미를 유지하되, 최종 SQL에는 MyBatis 태그, MyBatis 바인딩 파라미터 태그, 미해결 파라미터 표현식을 남기지 않는다.",
+        
         "[오류 복구 규칙]",
         "last_error가 있으면 이전 오류를 우선 해결한다.",
         "alias scope 오류, missing column 오류, 과도한 join 오류가 예상되면 SQL을 단순화한다.",
         "SELECT DISTINCT 안에서는 ORDER BY를 제거한다. Oracle은 DISTINCT와 ORDER BY 조합에서 SELECT list 제약이 강하다.",
         "row count 검증용 후보 추출에는 정렬이 필요 없으므로 ORDER BY는 가능하면 제거한다."
     ],
-    "user_instruction": "실행 가능한 Oracle SELECT 문 하나만 생성하라. 물리 테이블은 from_schema로 schema-qualified 처리하라. bind parameter와 후보 컬럼은 from_sql에서 직접 판단하라. bind parameter가 없으면 정확히 SELECT 1 AS \"NO_BIND\" FROM DUAL 을 반환하라. SYSDATE, CURRENT_DATE, SYSTIMESTAMP, TRUNC(SYSDATE), ADD_MONTHS(SYSDATE, ...) 등 현재일 기준 기간 조건은 제거하고 bind 후보를 추출하라. MyBatis 태그, MyBatis 바인딩 파라미터 태그, bind 파라미터 표현식, markdown, 주석, JSON, 여러 SQL 문, trailing semicolon을 포함하지 마라. TO_DATE(...), DATE literal, TIMESTAMP literal이 포함된 날짜 비교/기간 조건도 제거하라. SELECT list에 #{{param}}, ${{param}} 같은 MyBatis 바인딩 파라미터 태그나 :param, ? 같은 bind 파라미터 표현식을 절대 쓰지 마라. parameter 이름은 alias로만 쓰고, 값 expression은 원본 조건에서 해당 parameter와 비교되는 대상 컬럼/표현식이어야 한다. 대상은 물리 테이블 컬럼, CTE/inline view alias, 서브쿼리에서 계산된 표현식일 수 있다. 임의 literal이나 MyBatis 바인딩 파라미터 태그를 값으로 출력하지 마라."
+    "user_instruction": "규칙을 우선 적용해 실행 가능한 Oracle Bind SQL 하나만 반환하라."
 }
