@@ -31,13 +31,18 @@ def build_prompt_messages(filename: str, **kwargs) -> list[dict[str, str]]:
     ]
 
 
+class _SafeFormatDict(dict):
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
 def _render_value(value: Any, context: dict[str, Any]) -> Any:
     if isinstance(value, dict):
         return {key: _render_value(item, context) for key, item in value.items()}
     if isinstance(value, list):
         return [_render_value(item, context) for item in value]
     if isinstance(value, str):
-        return value.format(**context)
+        return value.format_map(_SafeFormatDict(context))
     return value
 
 

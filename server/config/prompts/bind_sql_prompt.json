@@ -18,10 +18,10 @@
         "CTE, inline view, subquery alias, table alias, DUAL은 물리 테이블이 아니므로 schema를 붙이지 않는다.",
         "최종 Bind SQL에는 MyBatis XML 태그(<if>, <choose>, <when>, <otherwise>, <where>, <trim>, <foreach>)가 남으면 안 된다.",
         "최종 Bind SQL에는 #{{param}}, ${{param}}, :param, ?, {{{{param}}}} 같은 미해결 placeholder가 절대 남으면 안 된다.",
-        "SELECT list에서도 placeholder를 쓰면 안 된다. 예: SELECT DISTINCT #{id} AS \"id\" FROM ... 는 금지한다.",
+        "SELECT list에서도 placeholder를 쓰면 안 된다. 예: SELECT DISTINCT #{{id}} AS \"id\" FROM ... 는 금지한다.",
         "bind parameter 값은 반드시 실제 DB 컬럼 또는 실제 컬럼에서 온 표현식으로 반환한다. 예: SELECT DISTINCT A.ID AS \"id\" FROM FROM_SCHEMA.TABLE A.",
         "parameter 이름은 SELECT alias로만 사용한다. parameter 이름 자체를 SELECT expression으로 사용하지 않는다.",
-        "원본에 #{id}가 있으면 Bind SQL은 #{id}를 출력하는 SQL이 아니라, id 값을 제공할 실제 컬럼을 찾아 A.ID AS \"id\" 형태로 출력하는 SQL이어야 한다.",
+        "원본에 #{{id}}가 있으면 Bind SQL은 #{{id}}를 출력하는 SQL이 아니라, id 값을 제공할 실제 컬럼을 찾아 A.ID AS \"id\" 형태로 출력하는 SQL이어야 한다.",
         "실제 컬럼을 찾을 수 없는 parameter는 placeholder를 남기지 말고 CAST(NULL AS VARCHAR2(4000)) AS \"<param>\" 형태로 반환한다.",
         "row 제한이 필요하면 Oracle ROWNUM을 바깥 query에서 사용하고 최대 50개 후보 row만 반환한다.",
         "[bind parameter 판단 규칙]",
@@ -55,5 +55,5 @@
         "SELECT DISTINCT 안에서는 ORDER BY를 제거한다. Oracle은 DISTINCT와 ORDER BY 조합에서 SELECT list 제약이 강하다.",
         "row count 검증용 후보 추출에는 정렬이 필요 없으므로 ORDER BY는 가능하면 제거한다."
     ],
-    "user_instruction": "실행 가능한 Oracle SELECT 문 하나만 생성하라. 물리 테이블은 from_schema로 schema-qualified 처리하라. bind parameter와 후보 컬럼은 from_sql에서 직접 판단하라. bind parameter가 없으면 정확히 SELECT 1 AS \"NO_BIND\" FROM DUAL 을 반환하라. SYSDATE, CURRENT_DATE, SYSTIMESTAMP, TRUNC(SYSDATE), ADD_MONTHS(SYSDATE, ...) 등 현재일 기준 기간 조건은 제거하고 bind 후보를 추출하라. MyBatis 태그, MyBatis placeholder, bind placeholder, markdown, 주석, JSON, 여러 SQL 문, trailing semicolon을 포함하지 마라. TO_DATE(...), DATE literal, TIMESTAMP literal이 포함된 날짜 비교/기간 조건도 제거하라. SELECT list에 #{param}, ${param}, :param, ? 같은 placeholder를 절대 쓰지 마라. parameter 이름은 alias로만 쓰고, 값 expression은 실제 DB 컬럼이어야 한다. 실제 컬럼을 찾을 수 없으면 placeholder 대신 CAST(NULL AS VARCHAR2(4000)) AS \"param\"을 반환하라."
+    "user_instruction": "실행 가능한 Oracle SELECT 문 하나만 생성하라. 물리 테이블은 from_schema로 schema-qualified 처리하라. bind parameter와 후보 컬럼은 from_sql에서 직접 판단하라. bind parameter가 없으면 정확히 SELECT 1 AS \"NO_BIND\" FROM DUAL 을 반환하라. SYSDATE, CURRENT_DATE, SYSTIMESTAMP, TRUNC(SYSDATE), ADD_MONTHS(SYSDATE, ...) 등 현재일 기준 기간 조건은 제거하고 bind 후보를 추출하라. MyBatis 태그, MyBatis placeholder, bind placeholder, markdown, 주석, JSON, 여러 SQL 문, trailing semicolon을 포함하지 마라. TO_DATE(...), DATE literal, TIMESTAMP literal이 포함된 날짜 비교/기간 조건도 제거하라. SELECT list에 #{{param}}, ${{param}}, :param, ? 같은 placeholder를 절대 쓰지 마라. parameter 이름은 alias로만 쓰고, 값 expression은 실제 DB 컬럼이어야 한다. 실제 컬럼을 찾을 수 없으면 placeholder 대신 CAST(NULL AS VARCHAR2(4000)) AS \"param\"을 반환하라."
 }
