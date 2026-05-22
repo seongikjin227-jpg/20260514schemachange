@@ -428,12 +428,13 @@ def generate_bind_sql(
     job: SqlInfoJob,
     last_error: str | None = None,
 ) -> str:
+    template_name = "bind_sql_final_retry_prompt.json" if _is_final_retry_mode(last_error) else "bind_sql_prompt.json"
     return call_llm_api(
         api_key=None,
         model=None,
         base_url=None,
         messages=_build_sql_messages(
-            "bind_sql_prompt.json",
+            template_name,
             from_sql=job.source_sql,
             from_schema=_schema_env("ORACLE_SCHEMA_SRC") or "UNKNOWN",
             last_error=last_error or "None",
@@ -480,6 +481,11 @@ def _schema_env(name: str) -> str:
     return (os.getenv(name) or "").strip().upper()
 
 
+def _is_final_retry_mode(last_error: str | None) -> bool:
+    text = (last_error or "").upper()
+    return "FINAL_RETRY_MODE=ON" in text or "ATTEMPT=3/3" in text
+
+
 def _generate_validation_test_sql(
     source_sql: str,
     target_sql: str,
@@ -488,13 +494,15 @@ def _generate_validation_test_sql(
     target_schema: str,
     comparison_mode: str,
     last_error: str | None = None,
+    final_retry_mode: bool = False,
 ) -> str:
+    template_name = "test_sql_final_retry_prompt.json" if final_retry_mode else "test_sql_prompt.json"
     return call_llm_api(
         api_key=None,
         model=None,
         base_url=None,
         messages=_build_sql_messages(
-            "test_sql_prompt.json",
+            template_name,
             source_sql=source_sql,
             target_sql=target_sql,
             source_schema=source_schema or "UNKNOWN",
@@ -520,6 +528,7 @@ def generate_test_sql(
         target_schema=_schema_env("ORACLE_SCHEMA_TGT"),
         comparison_mode="SOURCE_TO_TARGET",
         last_error=last_error,
+        final_retry_mode=_is_final_retry_mode(last_error),
     )
 
 

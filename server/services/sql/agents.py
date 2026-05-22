@@ -74,13 +74,20 @@ class TobeSqlGenerationAgent:
             state.bind_set_json_for_test = "[{}]"
             logger.info(f"[{self.name}] ({state.job_key}) stage=SKIP_BIND completed (reason=no_bind_params)")
         else:
+            bind_final_retry_mode = bool(state.last_error and "FINAL_RETRY_MODE=ON" in state.last_error.upper())
+            if bind_final_retry_mode:
+                logger.warning(
+                    f"[{self.name}] ({state.job_key}) stage=FINAL_RETRY_MODE "
+                    "enabled (template=bind_sql_final_retry_prompt.json)"
+                )
+
             state.bind_sql = generate_bind_sql(
                 job=state.job,
                 last_error=state.last_error,
             )
             logger.info(
                 f"[{self.name}] ({state.job_key}) stage=GENERATE_BIND_SQL "
-                f"completed (sql_length={len(state.bind_sql)})"
+                f"completed (sql_length={len(state.bind_sql)}, final_retry_mode={'ON' if bind_final_retry_mode else 'OFF'})"
             )
 
             bind_query_rows = execute_binding_query(state.bind_sql, max_rows=50)
@@ -100,6 +107,13 @@ class TobeSqlGenerationAgent:
                 f"completed (cases={len(bind_sets)})"
             )
 
+        final_retry_mode = bool(state.last_error and "FINAL_RETRY_MODE=ON" in state.last_error.upper())
+        if final_retry_mode:
+            logger.warning(
+                f"[{self.name}] ({state.job_key}) stage=FINAL_RETRY_MODE "
+                "enabled (template=test_sql_final_retry_prompt.json)"
+            )
+
         state.test_sql = generate_test_sql(
             job=state.job,
             tobe_sql=state.tobe_sql,
@@ -108,7 +122,7 @@ class TobeSqlGenerationAgent:
         )
         logger.info(
             f"[{self.name}] ({state.job_key}) stage=GENERATE_TEST_SQL "
-            f"completed (sql_length={len(state.test_sql)})"
+            f"completed (sql_length={len(state.test_sql)}, final_retry_mode={'ON' if final_retry_mode else 'OFF'})"
         )
 
         state.test_rows = execute_test_query(state.test_sql)
@@ -239,11 +253,18 @@ class TobeMultiAgentCoordinator:
         while retry_count < max_retries:
             raw_last_error = state.last_error
             state = self._build_state(job=job, last_error=raw_last_error)
+            attempt = retry_count + 1
             state.last_error = self._build_retry_prompt_context(
                 last_error=raw_last_error,
-                attempt=retry_count + 1,
+                attempt=attempt,
                 max_retries=max_retries,
             )
+            if state.last_error:
+                final_retry_mode = attempt >= max_retries
+                logger.warning(
+                    f"[TobeMultiAgentCoordinator] ({job_key}) stage=RETRY_PROMPT_CONTEXT "
+                    f"attempt={attempt}/{max_retries} final_retry_mode={'ON' if final_retry_mode else 'OFF'}"
+                )
             try:
                 graph_result = self.graph.invoke({"execution": state, "terminal_action": None})
                 state = graph_result["execution"]
