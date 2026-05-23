@@ -6,6 +6,7 @@
         "from_sql": "{from_sql}",
         "mapping_schema_text": "{mapping_schema_text}",
         "target_schema": "{target_schema}",
+        "correct_sql_hint_json": "{correct_sql_hint_json}",
         "last_error": "{last_error}"
     },
     "rules": [
@@ -20,7 +21,12 @@
         "DUAL, CTE 이름, 인라인 뷰 alias, 서브쿼리 alias에는 스키마를 붙이지 마십시오.",
         "동적 분기를 여러 SQL 문으로 분리하지 마십시오. 기존 MyBatis 동적 태그 구조 안에 그대로 유지하십시오.",
         "설명, markdown, JSON, 여러 SQL 문, PL/SQL, 문장 종료 세미콜론을 출력하지 마십시오.",
-        "정확히 하나의 Oracle/MyBatis SQL 템플릿만 반환하십시오."
+        "정확히 하나의 Oracle/MyBatis SQL 템플릿만 반환하십시오.",
+        "[정답 SQL RAG hint 규칙]",
+        "correct_sql_hint_json은 현재 from_sql과 유사한 과거 FR SQL에서 검색된 TOBE_CORRECT_SQL 예시이다. 검색은 EDIT_FR_SQL이 있으면 EDIT_FR_SQL, 없으면 FR_SQL_TEXT를 기준으로 한다.",
+        "correct_sql_hint_json은 최대 2개의 correct_sql 문자열 배열이다. 비어 있으면 사용하지 않는다.",
+        "correct_sql_hint_json은 TO-BE 변환 패턴을 참고하기 위한 정답 SQL 힌트이며, 현재 mapping_schema_text와 맞지 않는 테이블/컬럼/조건은 그대로 복사하지 않는다.",
+        "correct_sql_hint_json을 참고하되, 최종 TO-BE SQL은 반드시 현재 from_sql, mapping_schema_text, target_schema, last_error, 위 규칙을 기준으로 생성한다."
     ],
     "user_instruction": "규칙을 우선 적용해 Oracle/MyBatis TO-BE SQL 템플릿 하나만 반환하라."
 }

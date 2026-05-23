@@ -13,6 +13,7 @@ from langchain_openai import ChatOpenAI
 from server.core.exceptions import LLMRateLimitError
 from server.services.sql.domain_models import MappingRuleItem, SqlInfoJob
 from server.services.sql.prompt_service import build_prompt_messages
+from server.services.sql.correct_sql_rag_service import correct_sql_hint_rag_service
 from server.services.sql.tobe_sql_tuning_service import tobe_sql_tuning_service
 
 
@@ -226,6 +227,15 @@ def serialize_tuning_examples_for_prompt(tuning_examples: list[dict[str, str]]) 
     return json.dumps(compact_examples, ensure_ascii=False, indent=2)
 
 
+def serialize_correct_sql_hints_for_prompt(hints: list[dict[str, object]]) -> str:
+    correct_sqls = [
+        str(hint.get("correct_sql", "")).strip()
+        for hint in hints
+        if isinstance(hint, dict) and str(hint.get("correct_sql", "")).strip()
+    ]
+    return json.dumps(correct_sqls, ensure_ascii=False, indent=2)
+
+
 def _build_sql_messages(template_name: str, **payload: str) -> list[dict[str, str]]:
     return build_prompt_messages(template_name, **payload)
 
@@ -410,6 +420,11 @@ def generate_tobe_sql(
     last_error: str | None = None,
 ) -> str:
     scoped_rules = _select_mapping_rules_for_job(job=job, mapping_rules=mapping_rules)
+    correct_sql_hints = correct_sql_hint_rag_service.retrieve_correct_sql_hints(
+        sql_text=job.source_sql,
+        correct_kind="TOBE",
+        current_row_id=job.row_id,
+    )
     return call_llm_api(
         api_key=None,
         model=None,
@@ -419,6 +434,7 @@ def generate_tobe_sql(
             from_sql=job.source_sql,
             mapping_schema_text=_serialize_mapping_rules(scoped_rules),
             target_schema=_schema_env("ORACLE_SCHEMA_TGT") or "UNKNOWN",
+            correct_sql_hint_json=serialize_correct_sql_hints_for_prompt(correct_sql_hints),
             last_error=last_error or "None",
         ),
     )
@@ -429,6 +445,11 @@ def generate_bind_sql(
     last_error: str | None = None,
 ) -> str:
     template_name = "bind_sql_final_retry_prompt.json" if _is_final_retry_mode(last_error) else "bind_sql_prompt.json"
+    correct_sql_hints = correct_sql_hint_rag_service.retrieve_correct_sql_hints(
+        sql_text=job.source_sql,
+        correct_kind="BIND",
+        current_row_id=job.row_id,
+    )
     return call_llm_api(
         api_key=None,
         model=None,
@@ -437,6 +458,7 @@ def generate_bind_sql(
             template_name,
             from_sql=job.source_sql,
             from_schema=_schema_env("ORACLE_SCHEMA_SRC") or "UNKNOWN",
+            correct_sql_hint_json=serialize_correct_sql_hints_for_prompt(correct_sql_hints),
             last_error=last_error or "None",
         ),
     )
@@ -495,6 +517,7 @@ def _generate_validation_test_sql(
     comparison_mode: str,
     last_error: str | None = None,
     final_retry_mode: bool = False,
+    correct_sql_hint_json: str = "[]",
 ) -> str:
     template_name = "test_sql_final_retry_prompt.json" if final_retry_mode else "test_sql_prompt.json"
     return call_llm_api(
@@ -509,6 +532,7 @@ def _generate_validation_test_sql(
             target_schema=target_schema or "UNKNOWN",
             bind_set_json=_load_bind_sets_json(bind_set_json),
             comparison_mode=comparison_mode,
+            correct_sql_hint_json=correct_sql_hint_json,
             last_error=last_error or "None",
         ),
     )
@@ -520,6 +544,11 @@ def generate_test_sql(
     bind_set_json: str,
     last_error: str | None = None,
 ) -> str:
+    correct_sql_hints = correct_sql_hint_rag_service.retrieve_correct_sql_hints(
+        sql_text=job.source_sql,
+        correct_kind="TEST",
+        current_row_id=job.row_id,
+    )
     return _generate_validation_test_sql(
         source_sql=job.source_sql,
         target_sql=tobe_sql,
@@ -529,6 +558,7 @@ def generate_test_sql(
         comparison_mode="SOURCE_TO_TARGET",
         last_error=last_error,
         final_retry_mode=_is_final_retry_mode(last_error),
+        correct_sql_hint_json=serialize_correct_sql_hints_for_prompt(correct_sql_hints),
     )
 
 
@@ -547,4 +577,5 @@ def generate_sql_comparison_test_sql(
         target_schema=target_schema,
         comparison_mode="TARGET_TO_TARGET",
         last_error=last_error,
+        correct_sql_hint_json="[]",
     )

@@ -5,6 +5,7 @@
     "inputs": {
         "from_sql": "{from_sql}",
         "from_schema": "{from_schema}",
+        "correct_sql_hint_json": "{correct_sql_hint_json}",
         "last_error": "{last_error}"
     },
     "rules": [
@@ -42,6 +43,11 @@
         "여러 bind parameter가 있으면 같은 SELECT에서 함께 반환한다.",
         "서로 관계없는 scalar subquery, CROSS JOIN, artificial Cartesian product로 parameter 값을 조합하지 않는다.",
         "가능하면 SELECT DISTINCT를 사용해 중복 후보를 줄인다.",
+        "[정답 SQL RAG hint 규칙]",
+        "correct_sql_hint_json은 현재 from_sql과 유사한 과거 FR SQL에서 검색된 BIND_CORRECT_SQL 예시이다. 검색은 EDIT_FR_SQL이 있으면 EDIT_FR_SQL, 없으면 FR_SQL_TEXT를 기준으로 한다.",
+        "correct_sql_hint_json은 최대 2개의 correct_sql 문자열 배열이다. 비어 있으면 사용하지 않는다.",
+        "correct_sql_hint_json은 bind parameter 추출 방식과 row source 구성 방식을 참고하기 위한 정답 SQL 힌트이며, 현재 from_sql과 맞지 않는 테이블/컬럼/조건은 그대로 복사하지 않는다.",
+        "correct_sql_hint_json을 참고하되, 최종 Bind SQL은 반드시 현재 from_sql, from_schema, last_error, 위 규칙을 기준으로 생성한다.",
         "[기간/현재일 조건 제거 규칙]",
         "SYSDATE, CURRENT_DATE, SYSTIMESTAMP, CURRENT_TIMESTAMP, TRUNC(SYSDATE), ADD_MONTHS(SYSDATE, ...), LAST_DAY(SYSDATE)가 들어간 기간 조건은 bind 후보 추출에서 제거한다.",
         "TO_DATE(...), DATE 'YYYY-MM-DD', TIMESTAMP 'YYYY-MM-DD ...' 같은 고정 날짜 literal이 들어간 기간 조건도 제거한다.",
