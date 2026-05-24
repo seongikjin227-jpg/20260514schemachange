@@ -184,8 +184,8 @@ def get_pending_jobs() -> list[SqlInfoJob]:
             WHEN STATUS IS NULL THEN 6
             ELSE 9
           END,
-          {effective_fr_sql_length_expr} ASC,
           UPD_TS NULLS FIRST,
+          {effective_fr_sql_length_expr} ASC,
           TO_CHAR(SPACE_NM),
           TO_CHAR(SQL_ID)
     """
