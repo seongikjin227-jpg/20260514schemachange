@@ -242,7 +242,17 @@ def get_tuning_jobs() -> list:
           AND TO_SQL_TEXT IS NOT NULL
           AND UPPER(TRIM(STATUS)) = 'PASS'
           {batch_limit_clause}
-        ORDER BY UPD_TS NULLS FIRST, TO_CHAR(SPACE_NM), TO_CHAR(SQL_ID)
+        ORDER BY
+          CASE
+            WHEN UPPER(TRIM(TUNED_TEST)) = 'URGENT' THEN 1
+            WHEN UPPER(TRIM(TUNED_TEST)) = 'READY' THEN 2
+            WHEN UPPER(TRIM(TUNED_TEST)) = 'FAIL' THEN 3
+            WHEN TUNED_TEST IS NULL THEN 4
+            ELSE 9
+          END,
+          UPD_TS NULLS FIRST,
+          TO_CHAR(SPACE_NM),
+          TO_CHAR(SQL_ID)
     """
 
     jobs = []
