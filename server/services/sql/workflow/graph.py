@@ -2,7 +2,7 @@
 
 START
   -> tobe_generation.generate
-      -> non-SELECT: mark_non_select -> END
+      -> non-SELECT: sql_tuning.run -> END
       -> SELECT:     tobe_generation.validate
                        -> PASS: sql_tuning.run -> END
                        -> FAIL: END
@@ -26,10 +26,6 @@ def build_migration_workflow(generation_agent, tuning_agent):
         generation_agent.validate(execution)
         return {"execution": execution, "terminal_action": None}
 
-    def mark_non_select_node(state: MigrationGraphState) -> MigrationGraphState:
-        execution = state["execution"]
-        return {"execution": execution, "terminal_action": "persist_non_select"}
-
     def sql_tuning_run_node(state: MigrationGraphState) -> MigrationGraphState:
         execution = state["execution"]
         tuning_agent.run(execution)
@@ -38,7 +34,6 @@ def build_migration_workflow(generation_agent, tuning_agent):
     graph = StateGraph(MigrationGraphState)
     graph.add_node("tobe_generation.generate", tobe_generation_generate_node)
     graph.add_node("tobe_generation.validate", tobe_generation_validate_node)
-    graph.add_node("mark_non_select", mark_non_select_node)
     graph.add_node("sql_tuning.run", sql_tuning_run_node)
 
     graph.add_edge(START, "tobe_generation.generate")
@@ -47,7 +42,7 @@ def build_migration_workflow(generation_agent, tuning_agent):
         route_after_generation,
         {
             "validate_generation": "tobe_generation.validate",
-            "mark_non_select": "mark_non_select",
+            "tune_sql": "sql_tuning.run",
         },
     )
     graph.add_conditional_edges(
@@ -58,16 +53,15 @@ def build_migration_workflow(generation_agent, tuning_agent):
             "end": END,
         },
     )
-    graph.add_edge("mark_non_select", END)
     graph.add_edge("sql_tuning.run", END)
     return graph.compile()
 
 
-def route_after_generation(state: MigrationGraphState) -> Literal["validate_generation", "mark_non_select"]:
+def route_after_generation(state: MigrationGraphState) -> Literal["validate_generation", "tune_sql"]:
     execution = state["execution"]
     tag_kind = (execution.job.tag_kind or "").strip().upper()
     if tag_kind != "SELECT":
-        return "mark_non_select"
+        return "tune_sql"
     return "validate_generation"
 
 

@@ -292,7 +292,15 @@ class SqlTuningAgent:
             current_sql = tuned_sql
 
         state.tuned_sql = current_sql
-        self._run_tuned_sql_validation(state)
+        tag_kind = (state.job.tag_kind or "").strip().upper()
+        if tag_kind == "SELECT":
+            self._run_tuned_sql_validation(state)
+        else:
+            state.tuned_test = "PASS"
+            logger.info(
+                f"[{self.name}] ({state.job_key}) stage=SKIP_TUNED_TEST_FOR_NON_SELECT "
+                f"completed (tag_kind={tag_kind or 'UNKNOWN'})"
+            )
         if state.tuned_test == "PASS":
             tobe_sql_tuning_service.increment_rule_hit_counts_for_success(state.tuning_examples)
             state.formatted_sql = generate_formatted_sql(
@@ -441,7 +449,7 @@ class TobeMultiAgentCoordinator:
                 stage = terminal_action or stage
 
                 tag_kind = (job.tag_kind or "").strip().upper()
-                if terminal_action == "persist_non_select" or tag_kind != "SELECT":
+                if tag_kind != "SELECT":
                     self._complete_non_select_job(state, tag_kind)
                     return "PASS"
 
@@ -562,6 +570,7 @@ class TobeMultiAgentCoordinator:
             test_sql="",
             status="PASS",
             final_log=final_log,
+            formatted_sql=state.formatted_sql or None,
         )
         logger.info(
             f"[TobeMultiAgentCoordinator] ({state.job_key}) stage=SKIP_TEST_FOR_NON_SELECT "
