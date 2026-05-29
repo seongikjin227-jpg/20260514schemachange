@@ -17,6 +17,7 @@ class SqlInfoJob:
     fr_bindtuned_sql: Optional[str] = None
     to_sql_text: Optional[str] = None
     tuned_sql: Optional[str] = None
+    tuned_result: Optional[str] = None
     tuned_test: Optional[str] = None
     bind_sql: Optional[str] = None
     bind_set: Optional[str] = None

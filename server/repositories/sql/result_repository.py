@@ -128,6 +128,7 @@ def _row_to_sql_info_job(row) -> SqlInfoJob:
         fr_bindtuned_sql=_to_optional_text(row[17]) if len(row) > 17 else None,
         to_sql_text=_to_optional_text(row[7]),
         tuned_sql=_to_optional_text(row[8]),
+        tuned_result=_to_optional_text(row[24]) if len(row) > 24 else None,
         tuned_test=_to_optional_text(row[9]),
         bind_sql=_to_optional_text(row[10]),
         bind_set=_to_optional_text(row[11]),
@@ -168,6 +169,7 @@ def get_pending_jobs() -> list[SqlInfoJob]:
     sql_length_column = "SQL_LENGTH" if "SQL_LENGTH" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS SQL_LENGTH"
     map_type_column = "MAP_TYPE" if "MAP_TYPE" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS MAP_TYPE"
     formatted_sql_column = "FORMATTED_SQL" if "FORMATTED_SQL" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS FORMATTED_SQL"
+    tuned_result_column = "TUNED_RESULT" if "TUNED_RESULT" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS TUNED_RESULT"
     batch_limit_clause = "AND NVL(BATCH_CNT, 0) < 30" if "BATCH_CNT" in available_columns else ""
     tuning_job_exclusion_clause = (
         "AND NOT (UPPER(TRIM(STATUS)) = 'PASS' AND TO_SQL_TEXT IS NOT NULL AND UPPER(TRIM(TUNED_TEST)) IN ('READY', 'FAIL'))"
@@ -180,7 +182,7 @@ def get_pending_jobs() -> list[SqlInfoJob]:
         SELECT ROWIDTOCHAR(ROWID) AS RID,
                TAG_KIND, SPACE_NM, SQL_ID, FR_SQL_TEXT, TARGET_TABLE, EDIT_FR_SQL,
                TO_SQL_TEXT, {tuned_sql_column}, {tuned_test_column}, BIND_SQL, BIND_SET, TEST_SQL, STATUS, LOG,
-               UPD_TS, EDITED_YN, {fr_bindtuned_sql_column}, {select_correct_cols}, {sql_length_column}, {map_type_column}, {formatted_sql_column}
+               UPD_TS, EDITED_YN, {fr_bindtuned_sql_column}, {select_correct_cols}, {sql_length_column}, {map_type_column}, {formatted_sql_column}, {tuned_result_column}
         FROM {table}
         WHERE (UPPER(TRIM(STATUS)) IN ({pending_status_sql}) OR STATUS IS NULL)
           {tuning_job_exclusion_clause}
@@ -230,13 +232,14 @@ def get_tuning_jobs() -> list:
     sql_length_column = "SQL_LENGTH" if "SQL_LENGTH" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS SQL_LENGTH"
     map_type_column = "MAP_TYPE" if "MAP_TYPE" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS MAP_TYPE"
     formatted_sql_column = "FORMATTED_SQL" if "FORMATTED_SQL" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS FORMATTED_SQL"
+    tuned_result_column = "TUNED_RESULT" if "TUNED_RESULT" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS TUNED_RESULT"
     batch_limit_clause = "AND NVL(BATCH_CNT, 0) < 30" if "BATCH_CNT" in available_columns else ""
 
     query = f"""
         SELECT ROWIDTOCHAR(ROWID) AS RID,
                TAG_KIND, SPACE_NM, SQL_ID, FR_SQL_TEXT, TARGET_TABLE, EDIT_FR_SQL,
                TO_SQL_TEXT, {tuned_sql_column}, TUNED_TEST, BIND_SQL, BIND_SET, TEST_SQL, STATUS, LOG,
-               UPD_TS, EDITED_YN, {fr_bindtuned_sql_column}, {select_correct_cols}, {sql_length_column}, {map_type_column}, {formatted_sql_column}
+               UPD_TS, EDITED_YN, {fr_bindtuned_sql_column}, {select_correct_cols}, {sql_length_column}, {map_type_column}, {formatted_sql_column}, {tuned_result_column}
         FROM {table}
         WHERE (TUNED_TEST IS NULL OR UPPER(TRIM(TUNED_TEST)) <> 'PASS')
           AND TO_SQL_TEXT IS NOT NULL
@@ -369,6 +372,8 @@ def reset_tuning_state(row_id: str) -> None:
         set_clauses.append("TUNED_SQL = NULL")
     if "TUNED_TEST" in available_columns:
         set_clauses.append("TUNED_TEST = NULL")
+    if "TUNED_RESULT" in available_columns:
+        set_clauses.append("TUNED_RESULT = NULL")
     if "BLOCK_RAG_CONTENT" in available_columns:
         set_clauses.append("BLOCK_RAG_CONTENT = NULL")
 
@@ -456,6 +461,7 @@ def update_cycle_result(
     row_id: str,
     tobe_sql: str,
     tuned_sql: str | None,
+    tuned_result: str | None,
     tuned_test: str | None,
     bind_sql: str,
     bind_set: str | None,
@@ -471,6 +477,7 @@ def update_cycle_result(
         values={
             "TO_SQL_TEXT": tobe_sql,
             "TUNED_SQL": tuned_sql if "TUNED_SQL" in available_columns else None,
+            "TUNED_RESULT": tuned_result if "TUNED_RESULT" in available_columns else None,
             "TUNED_TEST": tuned_test if "TUNED_TEST" in available_columns else None,
             "FORMATTED_SQL": formatted_sql if "FORMATTED_SQL" in available_columns and formatted_sql is not None else None,
             "BIND_SQL": bind_sql,
@@ -488,6 +495,10 @@ def update_cycle_result(
         next_index = 3
     else:
         next_index = 2
+    if "TUNED_RESULT" in available_columns:
+        set_clauses.append(f"TUNED_RESULT = :{next_index}")
+        params.append(payload["TUNED_RESULT"])
+        next_index += 1
     if "TUNED_TEST" in available_columns:
         set_clauses.append(f"TUNED_TEST = :{next_index}")
         params.append(payload["TUNED_TEST"])

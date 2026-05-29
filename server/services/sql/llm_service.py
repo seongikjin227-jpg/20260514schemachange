@@ -4,7 +4,7 @@ import re
 import time
 from datetime import date, datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
@@ -193,7 +193,13 @@ def _fr_table_contains_any_target(fr_table: str, target_tables: set[str]) -> boo
     return False
 
 
-def serialize_tuning_examples_for_prompt(tuning_examples: list[dict[str, str]]) -> str:
+def serialize_tuning_examples_for_log(tuning_examples: list[dict[str, Any]]) -> str:
+    if not tuning_examples:
+        return "[]"
+    return json.dumps(tuning_examples, ensure_ascii=False, indent=2, default=str)
+
+
+def serialize_tuning_examples_for_prompt(tuning_examples: list[dict[str, Any]]) -> str:
     if not tuning_examples:
         return "[]"
 
@@ -202,29 +208,17 @@ def serialize_tuning_examples_for_prompt(tuning_examples: list[dict[str, str]]) 
         if not isinstance(block, dict):
             continue
 
-        matched_rules: list[dict[str, object]] = []
+        source_sql = block.get("source_sql", block.get("from_sql", ""))
         for rule_match in block.get("top_rule_matches", []):
             if isinstance(rule_match, dict):
-                matched_rules.append(
+                compact_examples.append(
                     {
-                        "rule_id": rule_match.get("rule_id", ""),
-                        "score": rule_match.get("score", 0),
+                        "source_sql": source_sql,
                         "guidance": rule_match.get("guidance", []),
                         "example_bad_sql": rule_match.get("example_bad_sql", ""),
                         "example_tuned_sql": rule_match.get("example_tuned_sql", ""),
                     }
                 )
-
-        compact_examples.append(
-            {
-                "block_id": block.get("block_id", ""),
-                "block_type": block.get("block_type", ""),
-                "source_sql": block.get("source_sql", block.get("from_sql", "")),
-                "search_method": block.get("search_method", ""),
-                "embedding_model": block.get("embedding_model", ""),
-                "top_rule_matches": matched_rules,
-            }
-        )
 
     return json.dumps(compact_examples, ensure_ascii=False, indent=2)
 
@@ -336,6 +330,110 @@ def _call_formatter_llm_for_job(
             error_message=str(exc),
         )
         raise
+
+
+def _call_tuning_llm_for_job(
+    *,
+    job: SqlInfoJob | None,
+    prompt_name: str,
+    messages: list[dict[str, str]],
+    last_error: str | None = None,
+) -> tuple[str, str]:
+    started = time.perf_counter()
+    try:
+        response_text = call_llm_text_api(
+            api_key=None,
+            model=None,
+            base_url=None,
+            messages=messages,
+        )
+        tuned_sql, tuned_result = _extract_tuning_response(response_text)
+        elapsed_seconds = time.perf_counter() - started
+        insert_sql_log(
+            space_nm=job.space_nm if job else None,
+            sql_id=job.sql_id if job else None,
+            sql_info_rowid=job.row_id if job else None,
+            sql_kind="TUNED_SQL",
+            sql_content=tuned_sql,
+            status="SUCCESS",
+            prompt_name=prompt_name,
+            model_name=_model_name(),
+            elapsed_seconds=elapsed_seconds,
+            attempt_no=_attempt_no(last_error),
+            stage_name="GENERATE_TUNED_SQL",
+        )
+        if tuned_result:
+            insert_sql_log(
+                space_nm=job.space_nm if job else None,
+                sql_id=job.sql_id if job else None,
+                sql_info_rowid=job.row_id if job else None,
+                sql_kind="TUNED_RESULT",
+                sql_content=tuned_result,
+                status="SUCCESS",
+                prompt_name=prompt_name,
+                model_name=_model_name(),
+                elapsed_seconds=elapsed_seconds,
+                attempt_no=_attempt_no(last_error),
+                stage_name="GENERATE_TUNED_RESULT",
+            )
+        return tuned_sql, tuned_result
+    except Exception as exc:
+        insert_sql_log(
+            space_nm=job.space_nm if job else None,
+            sql_id=job.sql_id if job else None,
+            sql_info_rowid=job.row_id if job else None,
+            sql_kind="TUNED_SQL",
+            sql_content=None,
+            status="FAIL",
+            prompt_name=prompt_name,
+            model_name=_model_name(),
+            elapsed_seconds=time.perf_counter() - started,
+            attempt_no=_attempt_no(last_error),
+            stage_name="GENERATE_TUNED_SQL",
+            error_message=str(exc),
+        )
+        raise
+
+
+def _extract_tuning_response(response_text: str) -> tuple[str, str]:
+    text = response_text.strip()
+    if not text:
+        raise ValueError("LLM returned an empty tuning response.")
+
+    code_block_match = re.search(r"```(?:json)?\s*(.*?)```", text, re.IGNORECASE | re.DOTALL)
+    json_text = code_block_match.group(1).strip() if code_block_match else text
+    parsed: object | None = None
+    try:
+        parsed = json.loads(json_text)
+    except Exception:
+        object_match = re.search(r"\{.*\}", json_text, flags=re.DOTALL)
+        if object_match:
+            try:
+                parsed = json.loads(object_match.group(0))
+            except Exception:
+                parsed = None
+
+    if isinstance(parsed, dict):
+        tuned_sql_raw = str(parsed.get("tuned_sql") or parsed.get("TUNED_SQL") or "").strip()
+        tuned_result = str(parsed.get("tuned_result") or parsed.get("TUNED_RESULT") or "").strip()
+        if not tuned_sql_raw:
+            raise ValueError("LLM tuning response did not include tuned_sql.")
+        return _extract_sql_text(tuned_sql_raw), tuned_result
+
+    labeled_match = re.search(
+        r"tuned_sql\s*:\s*(?P<tuned_sql>.*?)(?:\n\s*tuned_result\s*:|$)(?P<tuned_result>.*)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if labeled_match:
+        tuned_sql_raw = labeled_match.group("tuned_sql").strip()
+        tuned_result = labeled_match.group("tuned_result").strip()
+        if not tuned_sql_raw:
+            raise ValueError("LLM tuning response did not include tuned_sql.")
+        return _extract_sql_text(tuned_sql_raw), tuned_result
+
+    tuned_sql = _extract_sql_text(text)
+    return tuned_sql, ""
 
 
 def _extract_sql_text(response_text: str) -> str:
@@ -606,14 +704,13 @@ def generate_bind_sql(
 
 def tune_tobe_sql(
     current_tobe_sql: str,
-    tuning_examples: list[dict[str, str]] | None = None,
+    tuning_examples: list[dict[str, Any]] | None = None,
     last_error: str | None = None,
     job: SqlInfoJob | None = None,
-) -> str:
+) -> tuple[str, str]:
     template_name = "tobe_sql_tuning_prompt.json"
-    return _call_llm_for_job(
+    return _call_tuning_llm_for_job(
         job=job,
-        sql_kind="TUNED_SQL",
         prompt_name=template_name,
         last_error=last_error,
         messages=_build_sql_messages(

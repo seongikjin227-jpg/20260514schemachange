@@ -27,7 +27,7 @@ from server.services.sql.llm_service import (
     generate_sql_comparison_test_sql,
     generate_test_sql,
     generate_tobe_sql,
-    serialize_tuning_examples_for_prompt,
+    serialize_tuning_examples_for_log,
     tune_tobe_sql,
 )
 from server.services.sql.tobe_sql_tuning_service import tobe_sql_tuning_service
@@ -268,8 +268,10 @@ class SqlTuningAgent:
         for iteration in range(1, self.max_iterations + 1):
             tuning_examples = tobe_sql_tuning_service.retrieve_tuning_examples(current_sql)
             state.tuning_examples = tuning_examples
-            tuning_examples_json = serialize_tuning_examples_for_prompt(tuning_examples)
-            update_block_rag_content(row_id=state.job.row_id, block_rag_content=tuning_examples_json)
+            update_block_rag_content(
+                row_id=state.job.row_id,
+                block_rag_content=serialize_tuning_examples_for_log(tuning_examples),
+            )
             logger.info(
                 f"[{self.name}] ({state.job_key}) stage=LOAD_TUNING_RULES "
                 f"completed (iteration={iteration}, rule_blocks={len(tuning_examples)})"
@@ -277,12 +279,13 @@ class SqlTuningAgent:
             if not tuning_examples:
                 break
 
-            tuned_sql = tune_tobe_sql(
+            tuned_sql, tuned_result = tune_tobe_sql(
                 current_tobe_sql=current_sql,
                 tuning_examples=tuning_examples,
                 last_error=state.last_error,
                 job=state.job,
             )
+            state.tuned_result = tuned_result
             logger.info(
                 f"[{self.name}] ({state.job_key}) stage=APPLY_TUNING_RULES "
                 f"completed (iteration={iteration}, sql_length={len(tuned_sql)})"
@@ -525,6 +528,7 @@ class TobeMultiAgentCoordinator:
             row_id=state.job.row_id,
             tobe_sql=state.tobe_sql,
             tuned_sql=state.tuned_sql or None,
+            tuned_result=state.tuned_result or None,
             tuned_test=state.tuned_test or "READY",
             bind_sql=state.bind_sql,
             bind_set=state.bind_set_for_db,
@@ -545,6 +549,7 @@ class TobeMultiAgentCoordinator:
             row_id=state.job.row_id,
             tobe_sql=state.tobe_sql,
             tuned_sql=state.tuned_sql or None,
+            tuned_result=state.tuned_result or None,
             tuned_test=state.tuned_test,
             bind_sql=state.bind_sql,
             bind_set=state.bind_set_for_db,
@@ -564,6 +569,7 @@ class TobeMultiAgentCoordinator:
             row_id=state.job.row_id,
             tobe_sql=state.tobe_sql,
             tuned_sql=state.tuned_sql or None,
+            tuned_result=state.tuned_result or None,
             tuned_test=state.tuned_test,
             bind_sql="",
             bind_set=None,

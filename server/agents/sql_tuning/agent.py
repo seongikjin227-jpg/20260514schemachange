@@ -46,6 +46,7 @@ class SqlTuningAgent:
                 row_id=job.row_id,
                 tobe_sql=state.tobe_sql,
                 tuned_sql=state.tuned_sql if state.tuned_sql else None,
+                tuned_result=state.tuned_result if state.tuned_result else None,
                 tuned_test=final_status,
                 bind_sql=job.bind_sql,
                 bind_set=job.bind_set,

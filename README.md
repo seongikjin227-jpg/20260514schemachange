@@ -87,7 +87,11 @@ app/
 scripts/
   _bootstrap.py
   init_db.py
+  create_sql_log_table.py
   create_sql_rules_table.py
+  add_sql_info_classification_columns.py
+  add_formatted_sql_column.py
+  add_tuned_result_column.py
   seed_mig_rules.py
   list_mapping_rules.py
   generate_diagrams.py
@@ -95,7 +99,11 @@ scripts/
 
 - `_bootstrap.py`: 스크립트 실행 시 import path를 맞춥니다.
 - `init_db.py`: 초기 DB object 또는 기본 데이터를 준비합니다.
+- `create_sql_log_table.py`: `NEXT_SQL_LOG` append-only 로그 테이블을 생성/보정합니다.
 - `create_sql_rules_table.py`: SQL/tuning rule 관련 테이블을 생성합니다.
+- `add_sql_info_classification_columns.py`: `NEXT_SQL_INFO.SQL_LENGTH`, `MAP_TYPE` 컬럼을 추가합니다.
+- `add_formatted_sql_column.py`: `NEXT_SQL_INFO.FORMATTED_SQL` 컬럼을 추가합니다.
+- `add_tuned_result_column.py`: `NEXT_SQL_INFO.TUNED_RESULT` 컬럼을 추가합니다.
 - `seed_mig_rules.py`: migration rule seed 데이터를 적재합니다.
 - `list_mapping_rules.py`: 현재 mapping rule을 조회합니다.
 - `generate_diagrams.py`: 문서/분석용 다이어그램을 생성합니다.
@@ -304,10 +312,13 @@ python scripts/create_sql_log_table.py
 
 `NEXT_SQL_INFO.FORMATTED_SQL` stores the final SQL after TO-BE tuning passes and the indent formatter is applied.
 
+`NEXT_SQL_INFO.TUNED_RESULT` stores the LLM's short natural-language summary of which tuning guidance was applied. `TUNED_SQL` stores only the SQL statement.
+
 Create the column with:
 
 ```bash
 python scripts/add_formatted_sql_column.py
+python scripts/add_tuned_result_column.py
 ```
 
 ### SQL classification columns
@@ -322,6 +333,82 @@ python scripts/add_sql_info_classification_columns.py
 
 - `SQL_LENGTH`: `SHORT` when `FR_SQL_TEXT` is 5000 chars or less and `EDIT_FR_SQL`, if present, is also 5000 chars or less. Otherwise `LONG`.
 - `MAP_TYPE`: `COMPLEX` when any matched mapping row for the SQL target tables has `NEXT_MIG_INFO.MAP_TYPE = 'COMPLEX'`. Otherwise `SIMPLE` when all matched mappings are simple.
+
+## Current SQL/Tuning workflow
+
+Supervisor mode flags:
+
+- `SQL_CONVERSION_ONLY=true`: run SQL Conversion only. Data Migration and SQL Tuning are skipped.
+- `SQL_TUNING_ONLY=true`: run SQL Tuning only. Data Migration and SQL Conversion are skipped.
+- If both flags are true, `SQL_TUNING_ONLY` takes precedence.
+
+SQL Conversion polling uses `NEXT_SQL_INFO.STATUS`:
+
+- Included: `URGENT`, `READY`, `FAIL`, `SKIP`, `PENDING`, `NULL`
+- Excluded: `NA`
+- Ordering: `URGENT` -> `READY` -> `FAIL` -> `SKIP` -> `PENDING` -> `NULL`, then `UPD_TS`, SQL length, `SPACE_NM`, `SQL_ID`.
+- `SKIP` is retryable. `NA` is excluded from conversion/test targets.
+
+SQL Tuning polling uses `NEXT_SQL_INFO.TUNED_TEST` while requiring `STATUS='PASS'` and `TO_SQL_TEXT IS NOT NULL`:
+
+- Included: `URGENT`, `READY`, `FAIL`, `NULL`, and any non-`PASS` value
+- Excluded: `PASS`
+- Ordering: `URGENT` -> `READY` -> `FAIL` -> `NULL` -> other, then `UPD_TS`, `SPACE_NM`, `SQL_ID`.
+
+SELECT flow:
+
+```text
+TO-BE SQL generation
+  -> source/target validation
+  -> if validation PASS: TO-BE tuning
+  -> tuned SQL validation
+  -> if tuned validation PASS: rule HIT_CNT update and indent formatting
+```
+
+INSERT/UPDATE/DELETE flow:
+
+```text
+TO-BE SQL generation
+  -> validation skip
+  -> TO-BE tuning
+  -> tuned SQL validation skip
+  -> TUNED_TEST='PASS'
+  -> rule HIT_CNT update and indent formatting
+```
+
+Tuning LLM output is required to be one JSON object:
+
+```json
+{
+  "tuned_sql": "SELECT ...",
+  "tuned_result": "적용한 튜닝 가이드 요약 한두 문장"
+}
+```
+
+- `TUNED_SQL` stores only `tuned_sql`.
+- `TUNED_RESULT` stores only `tuned_result`.
+- `FORMATTED_SQL` stores the final SQL after indent formatting.
+- `NEXT_SQL_LOG` stores generation history separately as `TUNED_SQL`, `TUNED_RESULT`, `TUNED_TEST_SQL`, `FORMATTED_SQL`, and other SQL kinds.
+
+Tuning RAG prompt input is intentionally compact. The prompt receives only:
+
+- `source_sql`
+- `guidance`
+- `example_bad_sql`
+- `example_tuned_sql`
+
+`BLOCK_RAG_CONTENT` still stores the full retrieved RAG payload, including metadata such as search method, model, score, rule id, and block information.
+
+`NEXT_SQL_RULES.HIT_CNT` is updated only after the tuned result reaches `TUNED_TEST='PASS'`. Within one tuning prompt, duplicate SEARCH rule ids are counted once.
+
+Required optional migration scripts for current SQL output columns:
+
+```bash
+python scripts/create_sql_log_table.py
+python scripts/add_sql_info_classification_columns.py
+python scripts/add_formatted_sql_column.py
+python scripts/add_tuned_result_column.py
+```
 
 ## Correct SQL RAG hint
 

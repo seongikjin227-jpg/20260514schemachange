@@ -15,6 +15,7 @@ class JobExecutionState:
     tuning_examples: list[dict] = field(default_factory=list)
     tobe_sql: str = ""
     tuned_sql: str = ""
+    tuned_result: str = ""
     tuned_test: str | None = None
     bind_sql: str = ""
     bind_set_for_db: str | None = None
