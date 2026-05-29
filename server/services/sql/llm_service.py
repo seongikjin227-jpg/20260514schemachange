@@ -662,6 +662,7 @@ def generate_bind_tuned_sql(
     last_error: str | None = None,
 ) -> str:
     template_name = "bind_tuned_sql_prompt.json"
+    tuning_examples = tobe_sql_tuning_service.retrieve_tuning_examples(job.source_sql)
     return _call_llm_for_job(
         job=job,
         sql_kind="BIND_TUNED_SQL",
@@ -669,8 +670,13 @@ def generate_bind_tuned_sql(
         last_error=last_error,
         messages=_build_sql_messages(
             template_name,
-            from_sql=job.source_sql,
-            from_schema=_schema_env("ORACLE_SCHEMA_SRC") or "UNKNOWN",
+            current_from_sql=job.source_sql,
+            universal_tuning_rules=json.dumps(
+                tobe_sql_tuning_service.load_universal_tuning_rules(),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            tuning_examples_json=serialize_tuning_examples_for_prompt(tuning_examples),
             last_error=last_error or "None",
         ),
     )
