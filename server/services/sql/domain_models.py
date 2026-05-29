@@ -21,6 +21,7 @@ class SqlInfoJob:
     bind_sql: Optional[str] = None
     bind_set: Optional[str] = None
     test_sql: Optional[str] = None
+    formatted_sql: Optional[str] = None
     status: Optional[str] = None
     log_text: Optional[str] = None
     upd_ts: Optional[datetime] = None

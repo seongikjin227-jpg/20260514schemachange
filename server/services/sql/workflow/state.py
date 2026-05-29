@@ -21,6 +21,7 @@ class JobExecutionState:
     bind_set_json_for_test: str = "[]"
     bind_param_names: list[str] = field(default_factory=list)
     test_sql: str = ""
+    formatted_sql: str = ""
     test_rows: list[dict] = field(default_factory=list)
     status: str | None = None
 

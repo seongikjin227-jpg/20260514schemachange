@@ -23,6 +23,7 @@ from server.services.sql.binding_service import bind_sets_to_json, build_bind_se
 from server.services.sql.llm_service import (
     generate_bind_sql,
     generate_bind_tuned_sql,
+    generate_formatted_sql,
     generate_sql_comparison_test_sql,
     generate_test_sql,
     generate_tobe_sql,
@@ -292,6 +293,15 @@ class SqlTuningAgent:
 
         state.tuned_sql = current_sql
         self._run_tuned_sql_validation(state)
+        if state.tuned_test == "PASS":
+            state.formatted_sql = generate_formatted_sql(
+                job=state.job,
+                input_sql=state.tuned_sql or state.tobe_sql,
+            )
+            logger.info(
+                f"[{self.name}] ({state.job_key}) stage=GENERATE_FORMATTED_SQL "
+                f"completed (sql_length={len(state.formatted_sql)})"
+            )
 
     def _run_tuned_sql_validation(self, state: JobExecutionState) -> None:
         comparison_test_sql = generate_sql_comparison_test_sql(
@@ -512,6 +522,7 @@ class TobeMultiAgentCoordinator:
             test_sql=state.test_sql,
             status=state.status or "FAIL",
             final_log=final_log,
+            formatted_sql=state.formatted_sql or None,
         )
         logger.info(f"[TobeMultiAgentCoordinator] ({state.job_key}) completed successfully.")
 

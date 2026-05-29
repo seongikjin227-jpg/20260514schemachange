@@ -52,6 +52,7 @@ class SqlTuningAgent:
                 test_sql=job.test_sql,
                 status=job.status,
                 final_log=final_log,
+                formatted_sql=state.formatted_sql if state.formatted_sql else None,
             )
             logger.info(f"[SqlTuningAgent] {job_key} 튜닝 완료 (Status: {final_status})")
             return final_status

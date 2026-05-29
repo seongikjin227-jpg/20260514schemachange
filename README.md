@@ -302,6 +302,14 @@ python scripts/create_sql_log_table.py
 
 `NEXT_SQL_LOG` stores generated intermediate retry SQL and execution/error status with `SPACE_NM`, `SQL_ID`, `SQL_KIND`, `SQL_CONTENT`, `STATUS`, `PROMPT_NAME`, `MODEL_NAME`, `BATCH_NO`, `CYCLE_NO`, `ELAPSED_SECONDS`, `ATTEMPT_NO`, `STAGE_NAME`, and `ERROR_MESSAGE`.
 
+`NEXT_SQL_INFO.FORMATTED_SQL` stores the final SQL after TO-BE tuning passes and the indent formatter is applied.
+
+Create the column with:
+
+```bash
+python scripts/add_formatted_sql_column.py
+```
+
 ### SQL classification columns
 
 `NEXT_SQL_INFO.SQL_LENGTH` and `NEXT_SQL_INFO.MAP_TYPE` are filled when a SQL conversion job starts.

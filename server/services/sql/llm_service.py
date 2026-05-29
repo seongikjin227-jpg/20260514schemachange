@@ -291,6 +291,53 @@ def _call_llm_for_job(
         raise
 
 
+def _call_formatter_llm_for_job(
+    *,
+    job: SqlInfoJob | None,
+    input_sql: str,
+) -> str:
+    prompt_name = "sql_indent_format_prompt.json"
+    sql_kind = "FORMATTED_SQL"
+    started = time.perf_counter()
+    try:
+        formatted_sql = call_llm_text_api(
+            api_key=None,
+            model=None,
+            base_url=None,
+            messages=_build_sql_messages(prompt_name, input_sql=input_sql),
+        ).strip()
+        if not formatted_sql:
+            raise ValueError("LLM returned an empty formatted SQL.")
+        insert_sql_log(
+            space_nm=job.space_nm if job else None,
+            sql_id=job.sql_id if job else None,
+            sql_info_rowid=job.row_id if job else None,
+            sql_kind=sql_kind,
+            sql_content=formatted_sql,
+            status="SUCCESS",
+            prompt_name=prompt_name,
+            model_name=_model_name(),
+            elapsed_seconds=time.perf_counter() - started,
+            stage_name="GENERATE_FORMATTED_SQL",
+        )
+        return formatted_sql
+    except Exception as exc:
+        insert_sql_log(
+            space_nm=job.space_nm if job else None,
+            sql_id=job.sql_id if job else None,
+            sql_info_rowid=job.row_id if job else None,
+            sql_kind=sql_kind,
+            sql_content=None,
+            status="FAIL",
+            prompt_name=prompt_name,
+            model_name=_model_name(),
+            elapsed_seconds=time.perf_counter() - started,
+            stage_name="GENERATE_FORMATTED_SQL",
+            error_message=str(exc),
+        )
+        raise
+
+
 def _extract_sql_text(response_text: str) -> str:
     text = response_text.strip()
     code_block_match = re.search(r"```(?:sql)?\s*(.*?)```", text, re.IGNORECASE | re.DOTALL)
@@ -426,6 +473,24 @@ def call_llm_api(
     messages: list[dict[str, str]],
     provider: str | None = None,
 ) -> str:
+    return _extract_sql_text(
+        call_llm_text_api(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            messages=messages,
+            provider=provider,
+        )
+    )
+
+
+def call_llm_text_api(
+    api_key: str | None,
+    model: str | None,
+    base_url: str | None,
+    messages: list[dict[str, str]],
+    provider: str | None = None,
+) -> str:
     resolved_api_key = _env_or_value(api_key, "LLM_API_KEY")
     resolved_model = _env_or_value(model, "LLM_MODEL")
     raw_base_url = _env_or_value(base_url, "LLM_BASE_URL")
@@ -456,7 +521,7 @@ def call_llm_api(
             text = "".join(item.get("text", "") if isinstance(item, dict) else str(item) for item in content)
         else:
             text = str(content)
-        return _extract_sql_text(text)
+        return text
     except Exception as exc:
         message = str(exc)
         lowered = message.lower()
@@ -679,3 +744,10 @@ def generate_sql_comparison_test_sql(
         job=job,
         sql_kind="TUNED_TEST_SQL",
     )
+
+
+def generate_formatted_sql(
+    job: SqlInfoJob,
+    input_sql: str,
+) -> str:
+    return _call_formatter_llm_for_job(job=job, input_sql=input_sql)
