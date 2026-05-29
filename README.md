@@ -302,6 +302,19 @@ python scripts/create_sql_log_table.py
 
 `NEXT_SQL_LOG` stores generated intermediate retry SQL and execution/error status with `SPACE_NM`, `SQL_ID`, `SQL_KIND`, `SQL_CONTENT`, `STATUS`, `PROMPT_NAME`, `MODEL_NAME`, `BATCH_NO`, `CYCLE_NO`, `ELAPSED_SECONDS`, `ATTEMPT_NO`, `STAGE_NAME`, and `ERROR_MESSAGE`.
 
+### SQL classification columns
+
+`NEXT_SQL_INFO.SQL_LENGTH` and `NEXT_SQL_INFO.MAP_TYPE` are filled when a SQL conversion job starts.
+
+Create the columns with:
+
+```bash
+python scripts/add_sql_info_classification_columns.py
+```
+
+- `SQL_LENGTH`: `SHORT` when `FR_SQL_TEXT` is 5000 chars or less and `EDIT_FR_SQL`, if present, is also 5000 chars or less. Otherwise `LONG`.
+- `MAP_TYPE`: `COMPLEX` when any matched mapping row for the SQL target tables has `NEXT_MIG_INFO.MAP_TYPE = 'COMPLEX'`. Otherwise `SIMPLE` when all matched mappings are simple.
+
 ## Correct SQL RAG hint
 
 TO-BE, Bind, Test SQL 생성 단계는 과거에 사람이 고친 correct SQL을 hint로 받을 수 있습니다.

@@ -8,10 +8,12 @@ import time
 from server.config import settings
 from server.core.exceptions import LLMRateLimitError
 from server.core.logger import logger
-from server.repositories.sql.mapper_repository import get_all_mapping_rules, get_unready_target_tables
+from server.repositories.sql.mapper_repository import get_all_mapping_rules, get_sql_map_type, get_unready_target_tables
 from server.repositories.sql.result_repository import (
+    classify_sql_length,
     reset_tuning_state,
     update_block_rag_content,
+    update_job_classification,
     update_cycle_result,
     update_fr_bindtuned_sql,
     update_job_na,
@@ -372,6 +374,15 @@ class TobeMultiAgentCoordinator:
         max_retries = 3
         stage = "INIT"
         state = self._build_state(job=job, last_error=None)
+        sql_length = classify_sql_length(job.fr_sql_text, job.edit_fr_sql)
+        map_type = get_sql_map_type(job.target_table)
+        update_job_classification(row_id=job.row_id, sql_length=sql_length, map_type=map_type)
+        job.sql_length = sql_length
+        job.map_type = map_type
+        logger.info(
+            f"[TobeMultiAgentCoordinator] ({job_key}) classification "
+            f"sql_length={sql_length}, map_type={map_type or 'UNKNOWN'}"
+        )
 
         if (job.status or "").strip().upper() == "FAIL":
             reset_tuning_state(job.row_id)

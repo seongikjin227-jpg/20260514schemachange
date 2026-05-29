@@ -28,6 +28,8 @@ class SqlInfoJob:
     tobe_correct_sql: Optional[str] = None
     bind_correct_sql: Optional[str] = None
     test_correct_sql: Optional[str] = None
+    sql_length: Optional[str] = None
+    map_type: Optional[str] = None
 
     @property
     def source_sql(self) -> str:

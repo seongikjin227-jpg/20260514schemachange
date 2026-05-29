@@ -13,6 +13,7 @@ _CORRECT_COLUMN_MAP = {
 }
 _LEGACY_CORRECT_COLUMN = "CORRECT_SQL"
 _PENDING_JOB_STATUSES = ("URGENT", "FAIL", "READY", "PENDING", "SKIP")
+_SQL_LENGTH_SHORT_MAX = 5000
 
 
 def _to_text(value, default: str = "") -> str:
@@ -138,6 +139,8 @@ def _row_to_sql_info_job(row) -> SqlInfoJob:
         tobe_correct_sql=_to_optional_text(row[18]) if len(row) > 18 else None,
         bind_correct_sql=_to_optional_text(row[19]) if len(row) > 19 else None,
         test_correct_sql=_to_optional_text(row[20]) if len(row) > 20 else None,
+        sql_length=_to_optional_text(row[21]) if len(row) > 21 else None,
+        map_type=_to_optional_text(row[22]) if len(row) > 22 else None,
     )
 
 
@@ -161,6 +164,8 @@ def get_pending_jobs() -> list[SqlInfoJob]:
     tuned_sql_column = "TUNED_SQL" if "TUNED_SQL" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS TUNED_SQL"
     tuned_test_column = "TUNED_TEST" if "TUNED_TEST" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS TUNED_TEST"
     fr_bindtuned_sql_column = "FR_BINDTUNED_SQL" if "FR_BINDTUNED_SQL" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS FR_BINDTUNED_SQL"
+    sql_length_column = "SQL_LENGTH" if "SQL_LENGTH" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS SQL_LENGTH"
+    map_type_column = "MAP_TYPE" if "MAP_TYPE" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS MAP_TYPE"
     batch_limit_clause = "AND NVL(BATCH_CNT, 0) < 30" if "BATCH_CNT" in available_columns else ""
     tuning_job_exclusion_clause = (
         "AND NOT (UPPER(TRIM(STATUS)) = 'PASS' AND TO_SQL_TEXT IS NOT NULL AND UPPER(TRIM(TUNED_TEST)) IN ('READY', 'FAIL'))"
@@ -173,7 +178,7 @@ def get_pending_jobs() -> list[SqlInfoJob]:
         SELECT ROWIDTOCHAR(ROWID) AS RID,
                TAG_KIND, SPACE_NM, SQL_ID, FR_SQL_TEXT, TARGET_TABLE, EDIT_FR_SQL,
                TO_SQL_TEXT, {tuned_sql_column}, {tuned_test_column}, BIND_SQL, BIND_SET, TEST_SQL, STATUS, LOG,
-               UPD_TS, EDITED_YN, {fr_bindtuned_sql_column}, {select_correct_cols}
+               UPD_TS, EDITED_YN, {fr_bindtuned_sql_column}, {select_correct_cols}, {sql_length_column}, {map_type_column}
         FROM {table}
         WHERE (UPPER(TRIM(STATUS)) IN ({pending_status_sql}) OR STATUS IS NULL)
           {tuning_job_exclusion_clause}
@@ -220,13 +225,15 @@ def get_tuning_jobs() -> list:
     )
     tuned_sql_column = "TUNED_SQL" if "TUNED_SQL" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS TUNED_SQL"
     fr_bindtuned_sql_column = "FR_BINDTUNED_SQL" if "FR_BINDTUNED_SQL" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS FR_BINDTUNED_SQL"
+    sql_length_column = "SQL_LENGTH" if "SQL_LENGTH" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS SQL_LENGTH"
+    map_type_column = "MAP_TYPE" if "MAP_TYPE" in available_columns else "CAST(NULL AS VARCHAR2(4000)) AS MAP_TYPE"
     batch_limit_clause = "AND NVL(BATCH_CNT, 0) < 30" if "BATCH_CNT" in available_columns else ""
 
     query = f"""
         SELECT ROWIDTOCHAR(ROWID) AS RID,
                TAG_KIND, SPACE_NM, SQL_ID, FR_SQL_TEXT, TARGET_TABLE, EDIT_FR_SQL,
                TO_SQL_TEXT, {tuned_sql_column}, TUNED_TEST, BIND_SQL, BIND_SET, TEST_SQL, STATUS, LOG,
-               UPD_TS, EDITED_YN, {fr_bindtuned_sql_column}, {select_correct_cols}
+               UPD_TS, EDITED_YN, {fr_bindtuned_sql_column}, {select_correct_cols}, {sql_length_column}, {map_type_column}
         FROM {table}
         WHERE (TUNED_TEST IS NULL OR UPPER(TRIM(TUNED_TEST)) <> 'PASS')
           AND TO_SQL_TEXT IS NOT NULL
@@ -298,6 +305,46 @@ def update_job_na(row_id: str, reason: str) -> None:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, [payload["STATUS"], payload["LOG"], row_id])
+        conn.commit()
+
+
+def classify_sql_length(fr_sql_text: str | None, edit_fr_sql: str | None) -> str:
+    fr_length = len(_to_text(fr_sql_text))
+    edit_text = _to_text(edit_fr_sql).strip()
+    edit_length = len(edit_text) if edit_text else 0
+    if fr_length <= _SQL_LENGTH_SHORT_MAX and edit_length <= _SQL_LENGTH_SHORT_MAX:
+        return "SHORT"
+    return "LONG"
+
+
+def update_job_classification(row_id: str, sql_length: str, map_type: str | None) -> None:
+    table = get_result_table()
+    available_columns = _get_available_columns(table)
+    values: dict[str, str | None] = {}
+    if "SQL_LENGTH" in available_columns:
+        values["SQL_LENGTH"] = sql_length
+    if "MAP_TYPE" in available_columns:
+        values["MAP_TYPE"] = map_type
+    if not values:
+        return
+
+    payload = _fit_payload_to_column_limits(table=table, values=values)
+    set_clauses: list[str] = []
+    params: list[str | None] = []
+    for column, value in payload.items():
+        params.append(value)
+        set_clauses.append(f"{column} = :{len(params)}")
+    set_clauses.append("UPD_TS = CURRENT_TIMESTAMP")
+    params.append(row_id)
+
+    query = f"""
+        UPDATE {table}
+        SET {", ".join(set_clauses)}
+        WHERE ROWID = CHARTOROWID(:{len(params)})
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
         conn.commit()
 
 

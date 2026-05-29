@@ -28,7 +28,7 @@ def get_all_mapping_rules() -> list[MappingRuleItem]:
     map_table = get_mapping_rule_table()
     detail_table = get_mapping_rule_detail_table()
     query = f"""
-        SELECT M.FR_TABLE, D.FR_COL, M.TO_TABLE, D.TO_COL
+        SELECT M.MAP_TYPE, M.FR_TABLE, D.FR_COL, M.TO_TABLE, D.TO_COL
         FROM {map_table} M
         JOIN {detail_table} D
           ON M.MAP_ID = D.MAP_ID
@@ -44,14 +44,44 @@ def get_all_mapping_rules() -> list[MappingRuleItem]:
         for row in cursor.fetchall():
             rules.append(
                 MappingRuleItem(
-                    map_type="",
-                    fr_table=_to_text(row[0]),
-                    fr_col=_to_text(row[1]),
-                    to_table=_to_text(row[2]),
-                    to_col=_to_text(row[3]),
+                    map_type=_to_text(row[0]).strip().upper(),
+                    fr_table=_to_text(row[1]),
+                    fr_col=_to_text(row[2]),
+                    to_table=_to_text(row[3]),
+                    to_col=_to_text(row[4]),
                 )
             )
     return rules
+
+
+def get_sql_map_type(target_table_value: str | None) -> str | None:
+    """Return COMPLEX if any matched mapping is complex, SIMPLE if all are simple."""
+    target_tables = _parse_target_tables(target_table_value)
+    if not target_tables:
+        return None
+
+    map_table = get_mapping_rule_table()
+    query = f"""
+        SELECT M.FR_TABLE, M.MAP_TYPE
+        FROM {map_table} M
+        WHERE UPPER(TRIM(M.TARGET_YN)) = 'Y'
+    """
+
+    matched_map_types: list[str] = []
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query)
+        for fr_table, map_type in cursor.fetchall():
+            fr_table_text = _to_text(fr_table).upper()
+            normalized_map_type = _to_text(map_type).strip().upper()
+            if any(_fr_table_contains_target(fr_table_text, target_table) for target_table in target_tables):
+                matched_map_types.append(normalized_map_type)
+
+    if not matched_map_types:
+        return None
+    if any(map_type == "COMPLEX" for map_type in matched_map_types):
+        return "COMPLEX"
+    return "SIMPLE"
 
 
 def get_unready_target_tables(target_table_value: str | None) -> list[str]:
